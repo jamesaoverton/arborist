@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import os
 import sqlite3
 import urllib.parse
@@ -13,12 +15,12 @@ from jinja2 import Template
 # ?dbs=x,y,z&id=foo:bar
 
 
-def get_rdfa(cur, prefixes, term_id):
-	ontology_iri, ontology_title = tree.get_ontology(cur, prefixes)
-    if term_id not in tree.top_levels:
+def get_rdfa(treename, cur, prefixes, href, stanza, term_id):
+    ontology_iri, ontology_title = tree.get_ontology(cur, prefixes)
+    if term_id not in top_levels:
         # Get a hierarchy under the entity type
         entity_type = tree.get_entity_type(cur, term_id)
-        hierarchy, curies = tree.get_hierarchy(cur, term_id, entity_type, add_children=add_children)
+        hierarchy, curies = tree.get_hierarchy(cur, term_id, entity_type)
     else:
         # Get the top-level for this entity type
         entity_type = term_id
@@ -99,7 +101,7 @@ def get_rdfa(cur, prefixes, term_id):
     )
     for row in cur:
         labels[row["subject"]] = row["value"]
-    for t, o_label in tree.top_levels.items():
+    for t, o_label in top_levels.items():
         labels[t] = o_label
     if ontology_iri and ontology_title:
         labels[ontology_iri] = ontology_title
@@ -161,67 +163,117 @@ def get_rdfa(cur, prefixes, term_id):
     return tree.term2tree(data, treename, term_id, entity_type, href=href)
 
 
-def get_tree_html(db, href, term):
-	with sqlite3.connect(f"build/{db}.db") as conn:
-		conn.row_factory = tree.dict_factory
-		cur = conn.cursor()
+def get_tree_html(treename, db, href, term, search=False):
+    with sqlite3.connect(f"../build/{db}.db") as conn:
+        conn.row_factory = tree.dict_factory
+        cur = conn.cursor()
 
-		# Get prefixes
-		cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
-    	all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
+        # Get prefixes
+        cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
+        all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
 
-    	predicate_ids = tree.get_sorted_predicates(cur)
+        predicate_ids = tree.get_sorted_predicates(cur)
 
-    	if term == "owl:Class":
-    		stanza = []
-    	else:
-    		cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
-        	stanza = cur.fetchall()
-    	
+        if term == "owl:Class":
+            stanza = []
+        else:
+            cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
+            stanza = cur.fetchall()
+            if not stanza:
+                return f"<div><h2>{treename}</h2><p>Term not found</p></div>"
+
+        # Create the prefix element
+        pref_strs = []
+        for prefix, base in all_prefixes:
+            pref_strs.append(f"{prefix}: {base}")
+        pref_str = "\n".join(pref_strs)
+        
         # get tree rdfa hiccup vector
-        hiccup = get_rdfa(cur, prefixes, term_id)
-        return hiccup.render(prefixes, hiccup, href=href)
+        body = [get_rdfa(treename, cur, all_prefixes, href, stanza, term)]
+        body_wrapper = ["div", {"prefix": pref_str}]
+        if search:
+            body_wrapper.append(
+            [
+                "div",
+                {"class": "form-row mt-2 mb-2"},
+                [
+                    "input",
+                    {
+                        "id": f"statements-typeahead",
+                        "class": "typeahead form-control",
+                        "type": "text",
+                        "value": "",
+                        "placeholder": "Search",
+                    },
+                ],
+            ]
+        )
+        body_wrapper.append(["h2", treename])
+        body = body_wrapper + body
+        return hiccup.render(all_prefixes, body, href=href)
 
 
 def main():
-	if "QUERY_STRING" in os.environ:
-		args = dict(urllib.parse.parse_qsl(os.environ["QUERY_STRING"]))
-	else:
-		sys.exit(1)
+    if "QUERY_STRING" in os.environ:
+        args = dict(urllib.parse.parse_qsl(os.environ["QUERY_STRING"]))
+    else:
+        print("Content-Type: text/html")
+        print("")
+        print("Bad page")
+        return
 
-	if "dbs" not in args:
-		sys.exit(1)
+    if "dbs" not in args:
+        print("Content-Type: text/html")
+        print("")
+        print("Bad page")
+        return
 
-	dbs = args["dbs"].split(",")
-	first_db = dbs.pop(0)
+    dbs = args["dbs"].split(",")
+    first_db = dbs.pop(0)
 
-	if "format" in args and args["format"] == "json":
-		# TODO - maybe we can search both & merge results?
-		json = search.search(f"build/{first_db}.db", args["text"])
-		print("Content-Type: application/json")
-		print("")
-		print(json)
-		return
+    if "format" in args and args["format"] == "json":
+        # TODO - maybe we can search both & merge results?
+        json = search.search(f"../build/{first_db}.db", args["text"])
+        print("Content-Type: application/json")
+        print("")
+        print(json)
+        return
 
-	term = "owl:Class"
-	if "id" in args:
-		term = args["id"]
+    term = "owl:Class"
+    if "id" in args:
+        term = args["id"]
 
-	href = f"?dbs={args['dbs']}&id={curie}"
+    href = "?dbs=" + args['dbs'] + "&id={curie}"
 
-	first_html = get_tree_html(first_db, href, term)
+    first_html = get_tree_html(first_db, first_db, href, term, search=True)
 
-	trees = []
-	for db in dbs:
-		trees.append(get_tree_html(db, href, term))
+    trees = []
+    for db in dbs:
+        trees.append(get_tree_html(db, db, href, term))
 
-	# Load Jinja template with CSS & JS and left & right trees
-	with open("src/index.html.jinja2", "r") as f:
-		t = Template(f.read())
+    # Load Jinja template with CSS & JS and left & right trees
+    with open("index.html.jinja2", "r") as f:
+        t = Template(f.read())
 
-	html = t.render(first=first_html, trees=trees, title="test")
+    html = t.render(first=first_html, trees=trees, title="test")
 
-	# Return with CGI headers
-	print("Content-Type: text/html")
-	print("")
-	print(html)
+    # Return with CGI headers
+    print("Content-Type: text/html")
+    print("")
+    print(html)
+    return
+
+
+top_levels = {
+    "ontology": "Ontology",
+    "owl:Class": "Class",
+    "owl:AnnotationProperty": "Annotation Property",
+    "owl:DataProperty": "Data Property",
+    "owl:ObjectProperty": "Object Property",
+    "owl:Individual": "Individual",
+    "rdfs:Datatype": "Datatype",
+}
+
+
+if __name__ == '__main__':
+    main()

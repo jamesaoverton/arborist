@@ -1,3 +1,9 @@
+### Workflow
+#
+# 1. [Install Requirements](install)
+# 2. [Build Dependencies](browser_deps)
+# 1. [View Browser](./src/browser.py?dbs=ncbitaxon-full,organism-tree)
+
 build:
 	mkdir $@
 
@@ -12,19 +18,32 @@ build/rdftab: | build
 	curl -L -o $@ $(RDFTAB_URL)
 	chmod +x $@
 
+build/robot.jar: | build
+	curl -Lk -o $@ https://build.obolibrary.io/job/ontodev/job/robot/job/master/lastSuccessfulBuild/artifact/bin/robot.jar
+
 build/organism-tree.owl: | build
-	# TODO
+	# TODO - download from ...
 
 build/organism-tree.db: src/prefixes.sql build/organism-tree.owl | build/rdftab
 	rm -rf $@
 	sqlite3 $@ < $<
 	./build/rdftab $@ < $(word 2,$^)
 
-build/organism-tree_prev.owl: | build
-	# TODO
+build/ncbitaxon.owl: | build
+	curl -Lk http://purl.obolibrary.org/obo/ncbitaxon.owl > $@
 
-build/organism-tree_prev.db: src/prefixes.sql build/organism-tree_prev.owl | build/rdftab
+build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl | build/rdftab
 	rm -rf $@
 	sqlite3 $@ < $<
 	./build/rdftab $@ < $(word 2,$^)
+	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
+	sqlite3 $@ "CREATE INDEX idx_subject ON statements (subject);"
+	sqlite3 $@ "CREATE INDEX idx_predicate ON statements (predicate);"
+	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
+	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
 
+.PHONY: install
+install: requirements.txt
+	python3 -m pip install -r $<
+
+browser_deps: build/ncbitaxon.db build/organism-tree.db
