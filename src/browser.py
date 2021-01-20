@@ -172,8 +172,6 @@ def get_tree_html(treename, db, href, term, search=False):
         cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
         all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
 
-        predicate_ids = tree.get_sorted_predicates(cur)
-
         if term == "owl:Class":
             stanza = []
         else:

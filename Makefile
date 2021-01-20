@@ -37,10 +37,7 @@ build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl | build/rdftab
 	sqlite3 $@ < $<
 	./build/rdftab $@ < $(word 2,$^)
 	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
-	sqlite3 $@ "CREATE INDEX idx_subject ON statements (subject);"
-	sqlite3 $@ "CREATE INDEX idx_predicate ON statements (predicate);"
 	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
-	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
 
 .PHONY: install
 install: requirements.txt
