@@ -2,7 +2,7 @@
 #
 # 1. [Install Requirements](install)
 # 2. [Build Dependencies](browser_deps)
-# 1. [View Browser](./src/browser.py?dbs=ncbitaxon-full,organism-tree)
+# 1. [View Browser](./src/browser.py?dbs=ncbitaxon,organism-tree&id=NCBITaxon:9606)
 
 build:
 	mkdir $@
@@ -38,9 +38,12 @@ build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl | build/rdftab
 	./build/rdftab $@ < $(word 2,$^)
 	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
 	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
+	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
+	sqlite3 $@ "ANALYZE;"
 
 .PHONY: install
 install: requirements.txt
 	python3 -m pip install -r $<
 
+.PHONY: browser_deps
 browser_deps: build/ncbitaxon.db build/organism-tree.db
