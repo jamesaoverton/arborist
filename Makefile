@@ -2,7 +2,7 @@
 #
 # 1. [Install Requirements](install)
 # 2. [Build Dependencies](browser_deps)
-# 1. [View Browser](./src/browser.py?dbs=ncbitaxon,organism-tree&id=NCBITaxon:9606)
+# 1. [View Browser](./src/browser.py?dbs=ncbitaxon,organism-tree,subspecies-tree&id=NCBITaxon:9606)
 
 build:
 	mkdir $@
@@ -29,13 +29,22 @@ build/organism-tree.db: src/prefixes.sql build/organism-tree.owl | build/rdftab
 	sqlite3 $@ < $<
 	./build/rdftab $@ < $(word 2,$^)
 
-build/ncbitaxon.owl: | build
-	curl -Lk http://purl.obolibrary.org/obo/ncbitaxon.owl > $@
-
-build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl | build/rdftab
+build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdftab
 	rm -rf $@
 	sqlite3 $@ < $<
 	./build/rdftab $@ < $(word 2,$^)
+	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
+	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
+	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
+	sqlite3 $@ "ANALYZE;"
+
+build/ncbitaxon.owl.gz: | build
+	curl -Lk http://purl.obolibrary.org/obo/ncbitaxon.owl | gzip > $@
+
+build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl.gz | build/rdftab
+	rm -rf $@
+	sqlite3 $@ < $<
+	zcat $(word 2,$^) | ./build/rdftab $@
 	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
 	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
 	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
@@ -46,4 +55,4 @@ install: requirements.txt
 	python3 -m pip install -r $<
 
 .PHONY: browser_deps
-browser_deps: build/ncbitaxon.db build/organism-tree.db
+browser_deps: build/ncbitaxon.db build/organism-tree.db build/subspecies-tree.db
