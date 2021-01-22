@@ -163,52 +163,109 @@ def get_rdfa(treename, cur, prefixes, href, stanza, term_id):
     return tree.term2tree(data, treename, term_id, entity_type, href=href)
 
 
-def get_tree_html(treename, db, href, term, search=False):
-    with sqlite3.connect(f"../build/{db}.db") as conn:
-        conn.row_factory = tree.dict_factory
-        cur = conn.cursor()
+def get_tree_html(cur, treename, href, term, search=False):
+    # Get prefixes
+    cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
+    all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
 
-        # Get prefixes
-        cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
-        all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
+    if term == "owl:Class":
+        stanza = []
+    else:
+        cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
+        stanza = cur.fetchall()
+        if not stanza:
+            return f"<div><h2>{treename}</h2><p>Term not found</p></div>"
 
-        if term == "owl:Class":
-            stanza = []
-        else:
-            cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
-            stanza = cur.fetchall()
-            if not stanza:
-                return f"<div><h2>{treename}</h2><p>Term not found</p></div>"
-
-        # Create the prefix element
-        pref_strs = []
-        for prefix, base in all_prefixes:
-            pref_strs.append(f"{prefix}: {base}")
-        pref_str = "\n".join(pref_strs)
-        
-        # get tree rdfa hiccup vector
-        body = [get_rdfa(treename, cur, all_prefixes, href, stanza, term)]
-        body_wrapper = ["div", {"prefix": pref_str}]
-        if search:
-            body_wrapper.append(
+    # Create the prefix element
+    pref_strs = []
+    for prefix, base in all_prefixes:
+        pref_strs.append(f"{prefix}: {base}")
+    pref_str = "\n".join(pref_strs)
+    
+    # get tree rdfa hiccup vector
+    body = [get_rdfa(treename, cur, all_prefixes, href, stanza, term)]
+    body_wrapper = ["div", {"prefix": pref_str}]
+    if search:
+        body_wrapper.append(
+        [
+            "div",
+            {"class": "form-row mt-2 mb-2"},
             [
-                "div",
-                {"class": "form-row mt-2 mb-2"},
-                [
-                    "input",
-                    {
-                        "id": f"statements-typeahead",
-                        "class": "typeahead form-control",
-                        "type": "text",
-                        "value": "",
-                        "placeholder": "Search",
-                    },
-                ],
-            ]
-        )
-        body_wrapper.append(["h2", treename])
-        body = body_wrapper + body
-        return hiccup.render(all_prefixes, body, href=href)
+                "input",
+                {
+                    "id": f"statements-typeahead",
+                    "class": "typeahead form-control",
+                    "type": "text",
+                    "value": "",
+                    "placeholder": "Search",
+                },
+            ],
+        ]
+    )
+    body_wrapper.append(["h2", treename])
+    body = body_wrapper + body
+    return hiccup.render(all_prefixes, body, href=href)
+
+
+def clean_value(value):
+    if value.startswith("<"):
+        value = value.lstrip("<").rstrip(">")
+    if value.startswith("http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id="):
+        value = value.replace("http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id=", "")
+        value = f'<a href="http://www.ncbi.nlm.nih.gov/Taxonomy/Browser/wwwtax.cgi?id={value}">{value}</a>'
+    return value
+
+
+def get_annotations(cur, term_id, href):
+    predicate_values = {}
+    cur.execute(f"SELECT DISTINCT predicate, value FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND value IS NOT NULL;")
+    for row in cur.fetchall():
+        value = clean_value(row["value"])
+        predicate_values[row["predicate"]] = value
+    cur.execute(f"SELECT DISTINCT predicate, object FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND object IS NOT NULL;")
+    for row in cur.fetchall():
+        obj_id = row["object"]
+        href2 = href.replace("{curie}", obj_id)
+        cur.execute(f"SELECT value FROM statements WHERE stanza = '{obj_id}' AND subject = '{obj_id}' AND predicate = 'rdfs:label';")
+        label = cur.fetchone()
+        if label:
+            label = label["value"]
+            if label:
+                value = f'<a href="{href2}">{label}<a>'
+        else:
+            value = clean_value(obj_id)
+            value = f'<a href="{href2}">{value}</a>'
+        predicate_values[row["predicate"]] = value
+
+    predicates = predicate_values.keys()
+    predicate_str = ",".join([f"'{x}'" for x in predicates])
+
+    predicate_labels = {}
+    cur.execute(f"SELECT DISTINCT subject, value FROM statements WHERE subject IN ({predicate_str}) AND predicate = 'rdfs:label'")
+    for row in cur.fetchall():
+        predicate_labels[row["subject"]] = row["value"]
+
+    rem_predicates = set(set(predicates) - set(predicate_labels.keys()))
+    for rp in rem_predicates:
+        predicate_labels[rp] = rp
+
+    return predicate_values, predicate_labels
+
+
+def build_annotations(annotations, predicate_labels):
+    table_names = annotations.keys()
+    html = '<table class="table table-striped"><thead><th></th>'
+    for tn in table_names:
+        html += f"<th>{tn}</th>"
+    html += "</thead><tbody>"
+    for predicate, label in predicate_labels.items():
+        html += f"<tr><td>{label}</td>"
+        for tn in table_names:
+            value = annotations[tn].get(predicate, "")
+            html += f"<td>{value}</td>"
+        html += "</tr>"
+    html += "</tbody></table>"
+    return html
 
 
 def main():
@@ -243,17 +300,58 @@ def main():
 
     href = "?dbs=" + args['dbs'] + "&id={curie}"
 
-    first_html = get_tree_html(first_db, first_db, href, term, search=True)
+    annotations = {}
+    predicate_labels = {}
+
+    with sqlite3.connect(f"../build/{first_db}.db") as conn:
+        conn.row_factory = tree.dict_factory
+        cur = conn.cursor()
+        try:
+            first_html = get_tree_html(cur, first_db, href, term, search=True)
+        except Exception as e:
+            print("Content-Type: text/html")
+            print("")
+            print("Error when generating HTML for " + db + ":<br>" + str(e))
+            return
+        if term:
+            predicate_values, cur_predicate_labels = get_annotations(cur, term, href)
+            annotations[first_db] = predicate_values
+            for predicate, label in cur_predicate_labels.items():
+                if predicate in predicate_labels:
+                    if predicate_labels[predicate] == predicate and predicate != label:
+                        predicate_labels[predicate] = label
+                else:
+                    predicate_labels[predicate] = label
 
     trees = []
     for db in dbs:
-        trees.append(get_tree_html(db, db, href, term))
+        with sqlite3.connect(f"../build/{db}.db") as conn:
+            conn.row_factory = tree.dict_factory
+            cur = conn.cursor()
+            try:
+                trees.append(get_tree_html(cur, db, href, term))
+                if term:
+                    predicate_values, cur_predicate_labels = get_annotations(cur, term, href)
+                    annotations[db] = predicate_values
+                    for predicate, label in cur_predicate_labels.items():
+                        if predicate in predicate_labels:
+                            if predicate_labels[predicate] == predicate and predicate != label:
+                                predicate_labels[predicate] = label
+                        else:
+                            predicate_labels[predicate] = label
+            except Exception as e:
+                print("Content-Type: text/html")
+                print("")
+                print("Error when generating HTML for " + db + ":<br>" + str(e))
+                return
 
     # Load Jinja template with CSS & JS and left & right trees
     with open("index.html.jinja2", "r") as f:
         t = Template(f.read())
 
-    html = t.render(first=first_html, trees=trees, title="test")
+    ann_html = build_annotations(annotations, predicate_labels)
+
+    html = t.render(first=first_html, trees=trees, title="test", annotations=ann_html)
 
     # Return with CGI headers
     print("Content-Type: text/html")

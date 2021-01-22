@@ -2,7 +2,7 @@
 #
 # 1. [Install Requirements](install)
 # 2. [Build Dependencies](browser_deps)
-# 1. [View Browser](./src/browser.py?dbs=ncbitaxon,organism-tree,subspecies-tree&id=NCBITaxon:9606)
+# 1. [View Browser](./src/browser.py?dbs=organism-tree,subspecies-tree&id=NCBITaxon:9606)
 
 build:
 	mkdir $@
