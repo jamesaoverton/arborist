@@ -222,6 +222,7 @@ def get_annotations(cur, term_id, href):
     for row in cur.fetchall():
         value = clean_value(row["value"])
         predicate_values[row["predicate"]] = value
+    
     cur.execute(f"SELECT DISTINCT predicate, object FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND object IS NOT NULL;")
     for row in cur.fetchall():
         obj_id = row["object"]
@@ -313,7 +314,7 @@ def main():
             print("")
             print("Error when generating HTML for " + db + ":<br>" + str(e))
             return
-        if term:
+        if term and term not in top_levels:
             predicate_values, cur_predicate_labels = get_annotations(cur, term, href)
             annotations[first_db] = predicate_values
             for predicate, label in cur_predicate_labels.items():
@@ -330,7 +331,7 @@ def main():
             cur = conn.cursor()
             try:
                 trees.append(get_tree_html(cur, db, href, term))
-                if term:
+                if term and term not in top_levels:
                     predicate_values, cur_predicate_labels = get_annotations(cur, term, href)
                     annotations[db] = predicate_values
                     for predicate, label in cur_predicate_labels.items():
@@ -349,7 +350,10 @@ def main():
     with open("index.html.jinja2", "r") as f:
         t = Template(f.read())
 
-    ann_html = build_annotations(annotations, predicate_labels)
+    if annotations:
+        ann_html = build_annotations(annotations, predicate_labels)
+    else:
+        ann_html = ""
 
     html = t.render(first=first_html, trees=trees, title="test", annotations=ann_html)
 

@@ -34,6 +34,7 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 	sqlite3 $@ < $<
 	./build/rdftab $@ < $(word 2,$^)
 	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
+	sqlite3 $@ "CREATE INDEX idx_predicate ON statements (predicate);"
 	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
 	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
 	sqlite3 $@ "ANALYZE;"
@@ -46,6 +47,7 @@ build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl.gz | build/rdftab
 	sqlite3 $@ < $<
 	zcat $(word 2,$^) | ./build/rdftab $@
 	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
+	sqlite3 $@ "CREATE INDEX idx_predicate ON statements (predicate);"
 	sqlite3 $@ "CREATE INDEX idx_object ON statements (object);"
 	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
 	sqlite3 $@ "ANALYZE;"
