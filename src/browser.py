@@ -301,8 +301,9 @@ def main():
         json_list = json.loads(search.search(f"../build/{first_db}.db", args["text"]))
         for db in dbs:
             json_list.extend(json.loads(search.search(f"../build/{db}.db", args["text"])))
-        # Sort alphabetically by name and take the first 20 results
-        json_list = sorted(json_list, key=lambda i: i["display_name"])[20:]
+        # Sort alphabetically by length & name and take the first 20 results
+        json_list = sorted(json_list, key=lambda i: i["display_name"])
+        json_list = sorted(json_list, key=lambda i: (-len(i["display_name"]), i["display_name"]))[20:]
         print("Content-Type: application/json")
         print("")
         print(json.dumps(json_list))
