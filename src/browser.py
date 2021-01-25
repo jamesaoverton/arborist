@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import json
 import os
 import sqlite3
 import urllib.parse
@@ -181,27 +182,27 @@ def get_tree_html(cur, treename, href, term, search=False):
     for prefix, base in all_prefixes:
         pref_strs.append(f"{prefix}: {base}")
     pref_str = "\n".join(pref_strs)
-    
+
     # get tree rdfa hiccup vector
     body = [get_rdfa(treename, cur, all_prefixes, href, stanza, term)]
     body_wrapper = ["div", {"prefix": pref_str}]
     if search:
         body_wrapper.append(
-        [
-            "div",
-            {"class": "form-row mt-2 mb-2"},
             [
-                "input",
-                {
-                    "id": f"statements-typeahead",
-                    "class": "typeahead form-control",
-                    "type": "text",
-                    "value": "",
-                    "placeholder": "Search",
-                },
-            ],
-        ]
-    )
+                "div",
+                {"class": "form-row mt-2 mb-2"},
+                [
+                    "input",
+                    {
+                        "id": f"statements-typeahead",
+                        "class": "typeahead form-control",
+                        "type": "text",
+                        "value": "",
+                        "placeholder": "Search",
+                    },
+                ],
+            ]
+        )
     body_wrapper.append(["h2", treename])
     body = body_wrapper + body
     return hiccup.render(all_prefixes, body, href=href)
@@ -218,16 +219,22 @@ def clean_value(value):
 
 def get_annotations(cur, term_id, href):
     predicate_values = {}
-    cur.execute(f"SELECT DISTINCT predicate, value FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND value IS NOT NULL;")
+    cur.execute(
+        f"SELECT DISTINCT predicate, value FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND value IS NOT NULL;"
+    )
     for row in cur.fetchall():
         value = clean_value(row["value"])
         predicate_values[row["predicate"]] = value
-    
-    cur.execute(f"SELECT DISTINCT predicate, object FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND object IS NOT NULL;")
+
+    cur.execute(
+        f"SELECT DISTINCT predicate, object FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND object IS NOT NULL;"
+    )
     for row in cur.fetchall():
         obj_id = row["object"]
         href2 = href.replace("{curie}", obj_id)
-        cur.execute(f"SELECT value FROM statements WHERE stanza = '{obj_id}' AND subject = '{obj_id}' AND predicate = 'rdfs:label';")
+        cur.execute(
+            f"SELECT value FROM statements WHERE stanza = '{obj_id}' AND subject = '{obj_id}' AND predicate = 'rdfs:label';"
+        )
         label = cur.fetchone()
         if label:
             label = label["value"]
@@ -242,7 +249,9 @@ def get_annotations(cur, term_id, href):
     predicate_str = ",".join([f"'{x}'" for x in predicates])
 
     predicate_labels = {}
-    cur.execute(f"SELECT DISTINCT subject, value FROM statements WHERE subject IN ({predicate_str}) AND predicate = 'rdfs:label'")
+    cur.execute(
+        f"SELECT DISTINCT subject, value FROM statements WHERE subject IN ({predicate_str}) AND predicate = 'rdfs:label'"
+    )
     for row in cur.fetchall():
         predicate_labels[row["subject"]] = row["value"]
 
@@ -275,31 +284,35 @@ def main():
     else:
         print("Content-Type: text/html")
         print("")
-        print("Bad page")
+        print("Missing query parameters")
         return
 
     if "dbs" not in args:
         print("Content-Type: text/html")
         print("")
-        print("Bad page")
+        print("One or more 'dbs' are required in query parameters")
         return
 
     dbs = args["dbs"].split(",")
     first_db = dbs.pop(0)
 
     if "format" in args and args["format"] == "json":
-        # TODO - maybe we can search both & merge results?
-        json = search.search(f"../build/{first_db}.db", args["text"])
+        # Search text in each database
+        json_list = json.loads(search.search(f"../build/{first_db}.db", args["text"]))
+        for db in dbs:
+            json_list.extend(json.loads(search.search(f"../build/{db}.db", args["text"])))
+        # Sort alphabetically by name and take the first 20 results
+        json_list = sorted(json_list, key=lambda i: i["display_name"])[20:]
         print("Content-Type: application/json")
         print("")
-        print(json)
+        print(json.dumps(json_list))
         return
 
     term = "owl:Class"
     if "id" in args:
         term = args["id"]
 
-    href = "?dbs=" + args['dbs'] + "&id={curie}"
+    href = "?dbs=" + args["dbs"] + "&id={curie}"
 
     annotations = {}
     predicate_labels = {}
@@ -375,5 +388,5 @@ top_levels = {
 }
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
