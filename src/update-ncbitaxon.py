@@ -64,6 +64,8 @@ def update_names(cur, names):
 				WHERE stanza = ? AND subject = ? AND predicate = 'rdfs:label';
 			""", (new_label, tax_id, tax_id))
 			for syn in row["IEDB Synonyms"].split(","):
+				if syn.strip() == "":
+					continue
 				cur.execute("""
 					INSERT INTO statements (stanza, subject, predicate, value) VALUES
 					(?, ?, "oboInOwl:hasExactSynonym", ?);
