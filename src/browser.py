@@ -5,6 +5,7 @@ import os
 import sqlite3
 import urllib.parse
 
+from collections import defaultdict
 from gizmos import hiccup, tree, search
 from jinja2 import Template
 
@@ -16,8 +17,9 @@ from jinja2 import Template
 # ?dbs=x,y,z&id=foo:bar
 
 
-def get_rdfa(treename, cur, prefixes, href, stanza, term_id):
+def get_data(treename, cur, prefixes, term_id, stanza):
     ontology_iri, ontology_title = tree.get_ontology(cur, prefixes)
+
     if term_id not in top_levels:
         # Get a hierarchy under the entity type
         entity_type = tree.get_entity_type(cur, term_id)
@@ -126,7 +128,18 @@ def get_rdfa(treename, cur, prefixes, href, stanza, term_id):
 
     # Initialise a map with one entry for the tree and one for all of the labels corresponding to
     # all of the compact URIs in the stanza:
-    data = {"labels": labels, "obsolete": obsolete, treename: hierarchy, "iri": ontology_iri}
+    return {
+        "labels": labels,
+        "obsolete": obsolete,
+        treename: hierarchy,
+        "iri": ontology_iri,
+        "entity_type": entity_type,
+    }
+
+
+def get_rdfa(treename, cur, prefixes, data, href, stanza, term_id):
+    ontology_iri = data.get("iri")
+    labels = data["labels"]
 
     # Determine the label to use for the given term id when generating RDFa (the term might have
     # multiple labels, in which case we will just choose one and show it everywhere). This defaults
@@ -143,7 +156,6 @@ def get_rdfa(treename, cur, prefixes, href, stanza, term_id):
         if predicate == "rdfs:label" and value == selected_label:
             label = value
             break
-
     subject = None
     si = None
     subject_label = None
@@ -161,30 +173,18 @@ def get_rdfa(treename, cur, prefixes, href, stanza, term_id):
         si = tree.curie2iri(prefixes, subject)
         subject_label = label
 
-    return tree.term2tree(data, treename, term_id, entity_type, href=href)
+    return tree.term2tree(data, treename, term_id, data["entity_type"], href=href)
 
 
-def get_tree_html(cur, treename, href, term, search=False):
-    # Get prefixes
-    cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
-    all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
-
-    if term == "owl:Class":
-        stanza = []
-    else:
-        cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
-        stanza = cur.fetchall()
-        if not stanza:
-            return f"<div><h2>{treename}</h2><p>Term not found</p></div>"
-
+def get_tree_html(treename, cur, prefixes, data, href, term, stanza, search=False):
     # Create the prefix element
     pref_strs = []
-    for prefix, base in all_prefixes:
+    for prefix, base in prefixes:
         pref_strs.append(f"{prefix}: {base}")
     pref_str = "\n".join(pref_strs)
 
     # get tree rdfa hiccup vector
-    body = [get_rdfa(treename, cur, all_prefixes, href, stanza, term)]
+    body = [get_rdfa(treename, cur, prefixes, data, href, stanza, term)]
     body_wrapper = ["div", {"prefix": pref_str}]
     if search:
         body_wrapper.append(
@@ -205,7 +205,8 @@ def get_tree_html(cur, treename, href, term, search=False):
         )
     body_wrapper.append(["h2", treename])
     body = body_wrapper + body
-    return hiccup.render(all_prefixes, body, href=href)
+    body = hiccup.render(prefixes, body, href=href)
+    return body
 
 
 def clean_value(value):
@@ -217,33 +218,122 @@ def clean_value(value):
     return value
 
 
-def get_annotations(cur, term_id, href):
-    predicate_values = {}
-    cur.execute(
-        f"SELECT DISTINCT predicate, value FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND value IS NOT NULL;"
-    )
-    for row in cur.fetchall():
-        value = clean_value(row["value"])
-        predicate_values[row["predicate"]] = value
+def get_annotations(treename, cur, prefixes, data, href, term_id, stanza):
+    # The subjects in the stanza that are of type owl:Axiom:
+    annotation_bnodes = set()
+    for row in stanza:
+        if row["predicate"] == "owl:annotatedSource":
+            annotation_bnodes.add(row["subject"])
 
-    cur.execute(
-        f"SELECT DISTINCT predicate, object FROM statements WHERE stanza = '{term_id}' AND subject = '{term_id}' AND object IS NOT NULL;"
-    )
-    for row in cur.fetchall():
-        obj_id = row["object"]
-        href2 = href.replace("{curie}", obj_id)
-        cur.execute(
-            f"SELECT value FROM statements WHERE stanza = '{obj_id}' AND subject = '{obj_id}' AND predicate = 'rdfs:label';"
-        )
-        label = cur.fetchone()
-        if label:
-            label = label["value"]
-            if label:
-                value = f'<a href="{href2}">{label}<a>'
+    annotations = defaultdict(dict)
+    for row in stanza:
+        # subject is the blank node, _:...
+        subject = row["subject"]
+        if subject not in annotation_bnodes:
+            continue
+
+        if subject not in annotations:
+            annotations[subject] = {}
+
+        predicate = row["predicate"]
+        obj = row["object"]
+        value = row["value"]
+
+        if predicate not in [
+            "owl:annotatedSource",
+            "owl:annotatedTarget",
+            "owl:annotatedProperty",
+            "rdf:type",
+        ]:
+            # This is the actual axiom that we care about and contains display value
+            annotations[subject]["predicate"] = predicate
+            if obj:
+                annotations[subject]["object"] = obj
+            if value:
+                annotations[subject]["value"] = value
+            annotations[subject]["annotation"] = row
+
+        if predicate == "owl:annotatedSource":
+            annotations[subject]["source"] = obj
+
+        elif predicate == "owl:annotatedProperty":
+            annotations[subject]["target_predicate"] = obj
+
+        elif predicate == "owl:annotatedTarget":
+            if obj:
+                annotations[subject]["target_object"] = obj
+            if value:
+                annotations[subject]["target_value"] = value
+
+    spv2annotation = {}
+    for bnode, details in annotations.items():
+        source = details["source"]
+        target_predicate = details["target_predicate"]
+        target = details.get("target_object", None) or details.get("target_value", None)
+
+        if source in spv2annotation:
+            # list of predicate -> values on this target (combo of predicate + value)
+            pred2val = spv2annotation[source]
         else:
-            value = clean_value(obj_id)
-            value = f'<a href="{href2}">{value}</a>'
-        predicate_values[row["predicate"]] = value
+            pred2val = {}
+
+        if target_predicate in pred2val:
+            annotated_values = pred2val[target_predicate]
+        else:
+            annotated_values = {}
+
+        if target in annotated_values:
+            ax_annotations = annotated_values[target]
+        else:
+            ax_annotations = {}
+
+        # predicate of the annotation
+        ann_predicate = details["predicate"]
+        if ann_predicate in ax_annotations:
+            # values of the annotation
+            anns = ax_annotations[ann_predicate]
+        else:
+            anns = []
+        anns.append(details["annotation"])
+
+        ax_annotations[ann_predicate] = anns
+        annotated_values[target] = ax_annotations
+        pred2val[target_predicate] = annotated_values
+        spv2annotation[source] = pred2val
+
+    # s2 maps the predicates of the given term to their corresponding rows (there can be more than
+    # one row per predicate):
+    s2 = defaultdict(list)
+    for row in stanza:
+        if row["subject"] == term_id:
+            s2[row["predicate"]].append(row)
+    pcs = list(s2.keys())
+
+    labels = data["labels"]
+
+    # Loop through the rows of the stanza that correspond to the predicates of the given term:
+    predicate_values = {}
+    for predicate in pcs:
+        if "browser-link" in predicate:
+            continue
+        # Initialise an empty list of "o"s, i.e., hiccup representations of objects:
+        objs = []
+        for row in s2[predicate]:
+            # Convert the `data` map, that has entries for the tree and for a list of the labels
+            # corresponding to all of the curies in the stanza, into a hiccup object `o`:
+            o = ["p", tree.row2o(stanza, data, row)]
+
+            # Check for axiom annotations and create nested
+            nest = tree.build_nested(
+                treename, data, labels, spv2annotation, term_id, row, [], href=href
+            )
+            if nest:
+                o += nest
+
+            # Append the `o` to the list of `os`:
+            objs.append(o)
+        if objs:
+            predicate_values[predicate] = hiccup.render(prefixes, objs.pop(0), href=href)
 
     predicates = predicate_values.keys()
     predicate_str = ",".join([f"'{x}'" for x in predicates])
@@ -303,7 +393,9 @@ def main():
             json_list.extend(json.loads(search.search(f"../build/{db}.db", args["text"])))
         # Sort alphabetically by length & name and take the first 20 results
         json_list = sorted(json_list, key=lambda i: i["display_name"])
-        json_list = sorted(json_list, key=lambda i: (-len(i["display_name"]), i["display_name"]))[20:]
+        json_list = sorted(json_list, key=lambda i: (-len(i["display_name"]), i["display_name"]))[
+            20:
+        ]
         print("Content-Type: application/json")
         print("")
         print(json.dumps(json_list))
@@ -321,32 +413,66 @@ def main():
     with sqlite3.connect(f"../build/{first_db}.db") as conn:
         conn.row_factory = tree.dict_factory
         cur = conn.cursor()
+        # Get prefixes
+        cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
+        all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
         try:
-            first_html = get_tree_html(cur, first_db, href, term, search=True)
+            if term == "owl:Class":
+                stanza = []
+            else:
+                cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
+                stanza = cur.fetchall()
+
+            if term != "owl:Class" and not stanza:
+                first_html = f"<div><h2>{first_db}</h2><p>Term not found</p></div>"
+            else:
+                data = get_data(first_db, cur, all_prefixes, term, stanza)
+                first_html = get_tree_html(
+                    first_db, cur, all_prefixes, data, href, term, stanza, search=True
+                )
+
+                if term and term not in top_levels:
+                    predicate_values, cur_predicate_labels = get_annotations(
+                        first_db, cur, all_prefixes, data, href, term, stanza
+                    )
+                    annotations[first_db] = predicate_values
+                    for predicate, label in cur_predicate_labels.items():
+                        if predicate in predicate_labels:
+                            if predicate_labels[predicate] == predicate and predicate != label:
+                                predicate_labels[predicate] = label
+                        else:
+                            predicate_labels[predicate] = label
         except Exception as e:
             print("Content-Type: text/html")
             print("")
-            print("Error when generating HTML for " + db + ":<br>" + str(e))
+            print("Error when generating HTML for " + first_db + ":<br>" + str(e))
             return
-        if term and term not in top_levels:
-            predicate_values, cur_predicate_labels = get_annotations(cur, term, href)
-            annotations[first_db] = predicate_values
-            for predicate, label in cur_predicate_labels.items():
-                if predicate in predicate_labels:
-                    if predicate_labels[predicate] == predicate and predicate != label:
-                        predicate_labels[predicate] = label
-                else:
-                    predicate_labels[predicate] = label
 
     trees = []
     for db in dbs:
         with sqlite3.connect(f"../build/{db}.db") as conn:
             conn.row_factory = tree.dict_factory
             cur = conn.cursor()
+            # Get prefixes
+            cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
+            all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
             try:
-                trees.append(get_tree_html(cur, db, href, term))
+                if term == "owl:Class":
+                    stanza = []
+                else:
+                    cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
+                    stanza = cur.fetchall()
+
+                if term != "owl:Class" and not stanza:
+                    trees.append(f"<div><h2>{db}</h2><p>Term not found</p></div>")
+                    continue
+
+                data = get_data(db, cur, all_prefixes, term, stanza)
+                trees.append(get_tree_html(db, cur, all_prefixes, data, href, term, stanza))
                 if term and term not in top_levels:
-                    predicate_values, cur_predicate_labels = get_annotations(cur, term, href)
+                    predicate_values, cur_predicate_labels = get_annotations(
+                        db, cur, all_prefixes, data, href, term, stanza
+                    )
                     annotations[db] = predicate_values
                     for predicate, label in cur_predicate_labels.items():
                         if predicate in predicate_labels:
@@ -354,6 +480,7 @@ def main():
                                 predicate_labels[predicate] = label
                         else:
                             predicate_labels[predicate] = label
+
             except Exception as e:
                 print("Content-Type: text/html")
                 print("")
