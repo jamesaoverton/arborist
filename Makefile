@@ -59,7 +59,6 @@ build/active-taxa.tsv: | build
 	# TODO - build from IEDB (see current org tree steps to create all-active-taxa)
 
 # IEDB active nodes + their ancestors (no pruning)
-.PHONY: build/ncbi-trimmed.db
 build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/active-taxa.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
