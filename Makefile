@@ -3,7 +3,7 @@
 # 1. [Install Requirements](install)
 # 2. [Download SOT](refresh_sheets)
 # 3. [Build Dependencies](browser_deps)
-# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,iedb-ncbitaxon,organism-tree&id=NCBITaxon:2759)
+# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,ncbi-trimmed,organism-tree&id=NCBITaxon:2759)
 
 build:
 	mkdir $@
@@ -57,6 +57,14 @@ refresh_sheets:
 build/iedb-ncbitaxon.db: build/ncbitaxon.db src/update-ncbitaxon.py $(IEDB_SHEETS)
 	cp $< $@
 	python3 $(word 2,$^) $@ $(IEDB_SHEETS) || (rm -f $@ && exit 1)
+
+build/active-taxa.tsv: | build
+	# TODO - build from IEDB (see current org tree steps to create all-active-taxa)
+
+.PHONY: build/ncbi-trimmed.db
+build/ncbi-trimmed.db: build/iedb-ncbitaxon.db src/trim.py build/active-taxa.tsv
+	cp $< $@
+	python3 $(word 2,$^) $@ $(word 3,$^)
 
 build/organism-tree.owl: | build
 	# TODO - download from ...
