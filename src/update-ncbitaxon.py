@@ -89,9 +89,7 @@ def update(source, target, names, nodes, parents):
     with sqlite3.connect(source) as conn:
         # Get stanzas from source database
         cur = conn.cursor()
-        cur.execute(
-            """SELECT stanza, subject, predicate, object, value, datatype, language FROM statements"""
-        )
+        cur.execute("SELECT * FROM statements")
         rows = cur.fetchall()
         insert = []
         for r in rows:

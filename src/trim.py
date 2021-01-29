@@ -64,10 +64,7 @@ def main():
         
         # use f-string because we don't know how many values we have
         active_nodes = ", ".join([f"'{x}'" for x in active_nodes])
-        cur.execute(
-            f"""SELECT stanza, subject, predicate, object, value, datatype, language
-            FROM statements WHERE stanza IN ({active_nodes})"""
-        )
+        cur.execute(f"SELECT * FROM statements WHERE stanza IN ({active_nodes})")
         rows = cur.fetchall()
         insert = []
         for r in rows:
