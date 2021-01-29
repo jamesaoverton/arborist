@@ -113,7 +113,7 @@ def update(source, target, names, nodes, parents):
                                                         value TEXT,
                                                         datatype TEXT,
                                                         language TEXT)""")
-            cur.execute(f"INSERT INTO statements VALUES " + insert)
+            cur_new.execute(f"INSERT INTO statements VALUES " + insert)
             print("updating labels...")
             update_names(cur_new, names)
             print("adding IEDB taxa...")
