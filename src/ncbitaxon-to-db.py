@@ -171,8 +171,8 @@ def add_node(cur, node, label, merged, synonyms, citations):
 
     rank = node["rank"]
     if rank and rank != "" and rank != "no rank":
-        if rank not in ranks:
-            print(f"WARN: Unrecognized rank '{rank}'")
+        # if rank not in ranks:
+        # print(f"WARN: Unrecognized rank '{rank}'")
         rank = label_to_id(rank)
         if rank in ["species_group", "species_subgroup"]:
             value = f"<http://purl.obolibrary.org/obo/NCBITaxon#_{rank}>"

@@ -3,7 +3,7 @@
 # 1. [Install Requirements](install)
 # 2. [Download SOT](refresh_sheets)
 # 3. [Build Dependencies](browser_deps)
-# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,ncbi-trimmed,organism-tree&id=NCBITaxon:2759)
+# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,iedb-ncbitaxon,organism-tree&id=NCBITaxon:2759)
 
 build:
 	mkdir $@
@@ -50,21 +50,26 @@ build/taxon_parents.tsv: | build
 IEDB_SHEETS := build/ncbi_taxa.tsv build/iedb_taxa.tsv build/taxon_parents.tsv
 iedb_sheets: $(IEDB_SHEETS)
 
+.PHONY: refresh_sheets
 refresh_sheets:
 	rm -rf $(IEDB_SHEETS)
 	make iedb_sheets
 
-build/iedb-ncbitaxon.db: build/ncbitaxon.db src/update-ncbitaxon.py $(IEDB_SHEETS)
-	cp $< $@
-	python3 $(word 2,$^) $@ $(IEDB_SHEETS) || (rm -f $@ && exit 1)
-
 build/active-taxa.tsv: | build
 	# TODO - build from IEDB (see current org tree steps to create all-active-taxa)
 
+# IEDB active nodes + their ancestors (no pruning)
 .PHONY: build/ncbi-trimmed.db
-build/ncbi-trimmed.db: build/iedb-ncbitaxon.db src/trim.py build/active-taxa.tsv
-	cp $< $@
-	python3 $(word 2,$^) $@ $(word 3,$^)
+build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/active-taxa.tsv
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 src/trim.py build/ncbitaxon.db build/active-taxa.tsv $@
+
+# active nodes + manual changes
+build/iedb-ncbitaxon.db: src/prefixes.sql src/update-ncbitaxon.py build/ncbi-trimmed.db $(IEDB_SHEETS)
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 src/update-ncbitaxon.py build/ncbi-trimmed.db $(IEDB_SHEETS) $@
 
 build/organism-tree.owl: | build
 	# TODO - download from ...
