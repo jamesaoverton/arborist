@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sqlite3
 import urllib.parse
 
@@ -353,16 +354,27 @@ def get_annotations(treename, cur, prefixes, data, href, term_id, stanza):
 
 
 def build_annotations(annotations, predicate_labels):
-    table_names = annotations.keys()
+    table_names = list(annotations.keys())
     html = '<table class="table table-striped"><thead><th></th>'
     for tn in table_names:
         html += f"<th>{tn}</th>"
     html += "</thead><tbody>"
     for predicate, label in predicate_labels.items():
         html += f"<tr><td>{label}</td>"
+        first_value = annotations[table_names[0]].get(predicate, "")
+        first_iri = None
+        if "href=" in first_value:
+            first_iri = re.search(r'href="(.+)"', first_value).group(1)
         for tn in table_names:
             value = annotations[tn].get(predicate, "")
-            html += f"<td>{value}</td>"
+            td_class = ""
+            if "href=" in value:
+                value_iri = re.search(r'href="(.+)"', value).group(1)
+                if not first_iri or value_iri != first_iri:
+                    td_class = "table-warning"
+            elif first_value != value:
+                td_class = "table-warning"
+            html += f'<td class="{td_class}">{value}</td>'
         html += "</tr>"
     html += "</tbody></table>"
     return html
