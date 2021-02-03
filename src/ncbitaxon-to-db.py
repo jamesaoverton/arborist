@@ -18,7 +18,7 @@ oboInOwl = {
     "hasOBONamespace": "has_obo_namespace",
     "hasRelatedSynonym": "has_related_synonym",
     "hasScope": "has_scope",
-    "hasSynonymType": "has_synonym_type"
+    "hasSynonymType": "has_synonym_type",
 }
 
 exact_synonym = "oboInOwl:hasExactSynonym"
@@ -110,7 +110,8 @@ def split_line(line):
 
 
 def create_tables(cur):
-    cur.execute("""CREATE TABLE IF NOT EXISTS statements (
+    cur.execute(
+        """CREATE TABLE IF NOT EXISTS statements (
                      stanza TEXT,
                      subject TEXT,
                      predicate TEXT,
@@ -118,8 +119,10 @@ def create_tables(cur):
                      value TEXT,
                      datatype TEXT,
                      language TEXT
-                   );""")
-    cur.execute("""
+                   );"""
+    )
+    cur.execute(
+        """
         INSERT OR IGNORE INTO statements (stanza, subject, predicate, object, value, datatype) VALUES
         ("rdfs:label", "rdfs:label", "rdf:type", "owl:AnnotationProperty", null, null),
         ("rdfs:comment", "rdfs:comment", "rdf:type", "owl:AnnotationProperty", null, null),
@@ -132,15 +135,18 @@ def create_tables(cur):
         ("oboInOwl:hasBroadSynonym", "oboInOwl:hasBroadSynonym", "rdf:type", "owl:AnnotationProperty", null, null),
         ("<http://purl.obolibrary.org/obo/NCBITaxon#_taxonomic_rank>", "<http://purl.obolibrary.org/obo/NCBITaxon#_taxonomic_rank>", "rdf:type", "owl:Class", null, null),
         ("<http://purl.obolibrary.org/obo/NCBITaxon#_taxonomic_rank>", "<http://purl.obolibrary.org/obo/NCBITaxon#_taxonomic_rank>", "rdfs:label", null, "taxonomic rank", "xsd:string");
-    """)
-    
+    """
+    )
+
     for predicate, label in oboInOwl.items():
         predicate = "oboInOwl:" + predicate
-        cur.execute(f"""
+        cur.execute(
+            f"""
             INSERT OR IGNORE INTO statements (stanza, subject, predicate, object, value, datatype) VALUES
             ("{predicate}", "{predicate}", "rdf:type", "owl:AnnotationProperty", null, null),
             ("{predicate}", "{predicate}", "rdfs:label", null, "{label}", "xsd:string");
-        """)
+        """
+        )
 
     for label, parent in predicates.items():
         predicate = "ncbitaxon:" + label_to_id(label)
@@ -206,7 +212,9 @@ def add_synonyms(cur, curie, synonyms):
             predicate = predicates[name_class]
             synonym_type = label_to_id(name_class)
             # TODO - add blank nodes
-            query_values.append(f"""("{curie}", "{curie}", "{predicate}", '{synonym}', "xsd:string")""")
+            query_values.append(
+                f"""("{curie}", "{curie}", "{predicate}", '{synonym}', "xsd:string")"""
+            )
     if query_values:
         query = "INSERT INTO statements (stanza, subject, predicate, value, datatype) VALUES "
         query += ", ".join(query_values)
@@ -256,7 +264,9 @@ def convert(taxdmp_path, database):
             print("retrieving citations...")
             with taxdmp.open("citations.dmp") as dmp:
                 for line in io.TextIOWrapper(dmp):
-                    cit_id, cit_key, pubmed_id, medline_id, url, text, tax_id_list, _ = split_line(line)
+                    cit_id, cit_key, pubmed_id, medline_id, url, text, tax_id_list, _ = split_line(
+                        line
+                    )
                     if medline_id == "0":
                         continue
                     for tax_id in tax_id_list.split():
@@ -270,7 +280,14 @@ def convert(taxdmp_path, database):
                     for i in range(0, min(len(fields), len(nodes_fields))):
                         node[nodes_fields[i]] = fields[i]
                     tax_id = node["tax_id"]
-                    add_node(cur, node, labels[tax_id], merged[tax_id], synonyms[tax_id], citations[tax_id])
+                    add_node(
+                        cur,
+                        node,
+                        labels[tax_id],
+                        merged[tax_id],
+                        synonyms[tax_id],
+                        citations[tax_id],
+                    )
 
         for label in ranks:
             rank = label_to_id(label)
@@ -278,14 +295,15 @@ def convert(taxdmp_path, database):
                 iri = f"<http://purl.obolibrary.org/obo/NCBITaxon#_{rank}>"
             else:
                 iri = "NCBITaxon:" + rank
-            cur.execute(f"""
+            cur.execute(
+                f"""
                 INSERT INTO statements (stanza, subject, predicate, object, value, datatype) VALUES
                 ("{iri}", "{iri}", "rdf:type", "owl:Class", null, null),
                 ("{iri}", "{iri}", "rdfs:label", null, "{label}", "xsd:string"),
                 ("{iri}", "{iri}", "rdfs:subClassOf", "<http://purl.obolibrary.org/obo/NCBITaxon#_taxonomic_rank>", null, null),
                 ("{iri}", "{iri}", "oboInOwl:hasOBONamespace", null, "ncbi_taxonomy", "xsd:string");
-            """)
-
+            """
+            )
 
 
 def main():
@@ -297,5 +315,5 @@ def main():
     convert(args.taxdmp, args.db)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -65,10 +65,24 @@ build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/act
 	python3 src/trim.py build/ncbitaxon.db build/active-taxa.tsv $@
 
 # active nodes + manual changes
-build/iedb-ncbitaxon.db: src/prefixes.sql src/update-ncbitaxon.py build/ncbi-trimmed.db $(IEDB_SHEETS)
+build/iedb-ncbitaxon-no-counts.db: src/prefixes.sql src/update-ncbitaxon.py build/ncbi-trimmed.db $(IEDB_SHEETS)
 	rm -rf $@
 	sqlite3 $@ < $<
-	python3 src/update-ncbitaxon.py build/ncbi-trimmed.db $(IEDB_SHEETS) $@
+	python3 $(filter-out src/prefixes.sql,$^) $@
+
+# Tax ID -> epitope count
+build/counts.tsv: | build
+	# TODO - query from IEDB
+
+# Tax ID used in counts -> list of all ancestors
+build/child-ancestors.tsv: src/get-ancestors.py build/ncbi-trimmed.db build/counts.tsv
+	python3 $^ $@
+
+# manual changes + epitope counts in label
+build/iedb-ncbitaxon.db: src/prefixes.sql src/add-counts.py build/iedb-ncbitaxon-no-counts.db build/counts.tsv build/child-ancestors.tsv
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 $(filter-out src/prefixes.sql,$^) $@
 
 build/organism-tree.owl: | build
 	# TODO - download from ...

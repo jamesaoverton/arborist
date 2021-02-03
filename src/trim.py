@@ -15,7 +15,9 @@ def main():
     weights = {}
     with sqlite3.connect(args.db) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT DISTINCT stanza FROM statements WHERE stanza LIKE 'iedb-taxon:%' OR stanza LIKE 'NCBITaxon:%'")
+        cur.execute(
+            "SELECT DISTINCT stanza FROM statements WHERE stanza LIKE 'iedb-taxon:%' OR stanza LIKE 'NCBITaxon:%'"
+        )
         for row in cur.fetchall():
             tax_id = row[0]
             try:
@@ -39,7 +41,7 @@ def main():
 
         for act_tax in active_tax_ids:
             cur.execute(
-            """WITH RECURSIVE active(node) AS (
+                """WITH RECURSIVE active(node) AS (
                 VALUES (?)
                 UNION
                  SELECT object AS node
@@ -53,7 +55,8 @@ def main():
                   AND statements.predicate = 'rdfs:subClassOf'
                   AND statements.object NOT LIKE '_:%'
               )
-              SELECT * FROM active""", (act_tax, act_tax)
+              SELECT * FROM active""",
+                (act_tax, act_tax),
             )
             for row in cur.fetchall():
                 parent_id = row[0]
@@ -61,7 +64,7 @@ def main():
 
         active_nodes = [x for x, y in weights.items() if y > 0]
         # print(f"Filtering for {len(active_nodes)} active nodes...")
-        
+
         # use f-string because we don't know how many values we have
         active_nodes = ", ".join([f"'{x}'" for x in active_nodes])
         cur.execute(f"SELECT * FROM statements WHERE stanza IN ({active_nodes})")
@@ -77,21 +80,21 @@ def main():
                     vals.append(f"'{itm}'")
             insert.append(", ".join(vals))
         insert = ", ".join([f"({x})" for x in insert])
-        
+
         # print(f"Adding {len(rows)} stanzas to new database...")
         with sqlite3.connect(args.output) as conn_new:
             cur_new = conn_new.cursor()
-            cur_new.execute("""CREATE TABLE statements (stanza TEXT,
+            cur_new.execute(
+                """CREATE TABLE statements (stanza TEXT,
                                                         subject TEXT,
                                                         predicate TEXT,
                                                         object TEXT,
                                                         value TEXT,
                                                         datatype TEXT,
-                                                        language TEXT)""")
+                                                        language TEXT)"""
+            )
             cur_new.execute("INSERT INTO statements VALUES " + insert)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
-
-
