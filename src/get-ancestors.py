@@ -50,6 +50,8 @@ def main():
             )
             ancestors = []
             for row in cur.fetchall():
+                if row[0] == tax_id:
+                    continue
                 ancestors.append(row[0])
             child_ancestors[tax_id] = ancestors
 
