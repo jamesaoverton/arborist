@@ -47,15 +47,18 @@ def get_cumulative_counts(cur, count_map, child_ancestors):
     return cuml_counts
 
 
-def find_collapse_nodes(collapse_nodes, active_taxa, cuml_counts, parent_children, prev_nodes, node):
-    if node not in active_taxa:
-        prev_count = cuml_counts[prev_nodes[0]]
-        cur_count = cuml_counts[node]
-        if prev_count == cur_count:
-            # If count is the same, we keep going until it isn't
-            prev_nodes.append(node)
-            for c in parent_children[node]:
-                find_collapse_nodes(collapse_nodes, active_taxa, cuml_counts, parent_children, prev_nodes, c)
+def find_collapse_nodes(
+    collapse_nodes, cuml_counts, parent_children, prev_nodes, node
+):
+    prev_count = cuml_counts[prev_nodes[0]]
+    cur_count = cuml_counts[node]
+    if prev_count == cur_count:
+        # If count is the same, we keep going until it isn't
+        prev_nodes.append(node)
+        for c in parent_children[node]:
+            find_collapse_nodes(
+                collapse_nodes, cuml_counts, parent_children, prev_nodes, c
+            )
 
     # Otherwise, we want to remove everything except the last node
     if len(prev_nodes) > 1:
@@ -65,7 +68,7 @@ def find_collapse_nodes(collapse_nodes, active_taxa, cuml_counts, parent_childre
 
     # Then continue with the next level
     for c in parent_children[node]:
-        find_collapse_nodes(collapse_nodes, active_taxa, cuml_counts, parent_children, [node], c)
+        find_collapse_nodes(collapse_nodes, cuml_counts, parent_children, [node], c)
 
 
 def get_parent(all_removed, child_parents, node):
@@ -75,29 +78,25 @@ def get_parent(all_removed, child_parents, node):
     return p
 
 
-def prune(cur, active_taxa, cuml_counts, parent_children, child_parents):
+def prune(cur, cuml_counts, parent_children, child_parents):
     top = parent_children["OBI:0100026"]
     collapse_nodes = {}
     for t in top:
         for t_child in parent_children[t]:
-            find_collapse_nodes(collapse_nodes, active_taxa, cuml_counts, parent_children, [t], t_child)
+            find_collapse_nodes(
+                collapse_nodes, cuml_counts, parent_children, [t], t_child
+            )
 
     print(f"Collapsing {len(collapse_nodes)} nodes...")
-    cur.execute(
-        """INSERT INTO statements (stanza, subject, predicate, object)
-        VALUES ('iedb-taxon:subsumes', 'iedb-taxon:subsumes', 'rdf:type', 'owl:AnnotationProperty')""")
     for remove, replace in collapse_nodes.items():
         new_parent = get_parent(collapse_nodes.keys(), child_parents, replace)
         cur.execute("UPDATE statements SET object = ? WHERE object = ?", (replace, remove))
         cur.execute("DELETE FROM statements WHERE stanza = ?", (remove,))
         cur.execute(
-            """INSERT INTO statements (stanza, subject, predicate, value)
-            VALUES (?, ?, 'iedb-taxon:subsumes', ?)""",
-            (replace, replace, remove))
-        cur.execute(
             """INSERT INTO statements (stanza, subject, predicate, object)
             VALUES (?, ?, 'rdfs:subClassOf', ?)""",
-            (replace, replace, new_parent))
+            (replace, replace, new_parent),
+        )
         if remove in cuml_counts:
             del cuml_counts[remove]
 
@@ -118,18 +117,10 @@ def get_child_ancestors(child_ancestors, child_parents, child, node):
 def main():
     parser = ArgumentParser()
     parser.add_argument("db", help="Database to add counts to")
-    parser.add_argument("active_taxa", help="IEDB active taxa")
     parser.add_argument("counts", help="TSV containing ID -> epitope count")
     parser.add_argument("child_parents", help="TSV containing ID -> [aremt")
     parser.add_argument("output", help="Output database")
     args = parser.parse_args()
-
-    active_taxa = []
-    with open(args.active_taxa, "r") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            active_taxa.append(get_curie(line.strip()))
 
     child_parents = {}
     with open(args.child_parents, "r") as f:
@@ -199,7 +190,7 @@ def main():
                     count_map[get_curie(row[0])] = int(row[1])
 
             cuml_counts = get_cumulative_counts(cur_new, count_map, child_ancestors)
-            cuml_counts = prune(cur_new, active_taxa, cuml_counts, parent_children, child_parents)
+            cuml_counts = prune(cur_new, cuml_counts, parent_children, child_parents)
 
             print("Adding epitope counts...")
             for tax_id, count in cuml_counts.items():

@@ -74,12 +74,12 @@ build/iedb-ncbitaxon-no-counts.db: src/prefixes.sql src/update-ncbitaxon.py buil
 build/counts.tsv: | build
 	# TODO - query from IEDB
 
-# Tax ID used in counts -> list of all ancestors
+# Tax ID used in counts -> parent
 build/child-parents.tsv: src/get-child-parents.py build/ncbi-trimmed.db build/counts.tsv
 	python3 $^ $@
 
-# manual changes + epitope counts in label
-build/iedb-ncbitaxon.db: src/prefixes.sql src/prune.py build/iedb-ncbitaxon-no-counts.db build/active-taxa.tsv build/counts.tsv build/child-parents.tsv
+# Collapse some nodes + add epitope counts
+build/iedb-ncbitaxon.db: src/prefixes.sql src/prune.py build/iedb-ncbitaxon-no-counts.db build/counts.tsv build/child-parents.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@
