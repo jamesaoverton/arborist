@@ -226,7 +226,7 @@ def get_tree_html(treename, cur, prefixes, data, href, term, stanza, search=Fals
     else:
         description = ""
     body_wrapper.append(["h2", treename])
-    body_wrapper.append(["div", ["small", description]])
+    body_wrapper.append(["div", {"style": "height: 30px;"}, ["small", description]])
     body = body_wrapper + body
     body = hiccup.render(prefixes, body, href=href)
     return body
