@@ -25,7 +25,7 @@ browsers = {
     },
     "iedb-ncbitaxon": {
         "name": "Pruned NCBITaxonomy",
-        "description": "A pruned version of NCBITaxonomy created to represent active species in IEDB"
+        "description": "NCBITaxonomy pruned to represent active species in IEDB"
     },
     "organism-tree": {
         "name": "Current Organism Tree",
@@ -226,7 +226,7 @@ def get_tree_html(treename, cur, prefixes, data, href, term, stanza, search=Fals
     else:
         description = ""
     body_wrapper.append(["h2", treename])
-    body_wrapper.append(["div", {"style": "height: 60px;"}, ["small", description]])
+    body_wrapper.append(["div", ["small", description]])
     body = body_wrapper + body
     body = hiccup.render(prefixes, body, href=href)
     return body
