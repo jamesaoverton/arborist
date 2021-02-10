@@ -18,6 +18,22 @@ from jinja2 import Template
 # ?dbs=x,y,z&id=foo:bar
 
 
+browsers = {
+    "ncbitaxon": {
+        "name": "NCBITaxonomy",
+        "description": "The official NCBITaxonomy"
+    },
+    "iedb-ncbitaxon": {
+        "name": "Pruned NCBITaxonomy",
+        "description": "A pruned version of NCBITaxonomy created to represent active species in IEDB"
+    },
+    "organism-tree": {
+        "name": "Current Organism Tree",
+        "description": "The latest version of the organism tree used for IEDB"
+    }
+}
+
+
 def get_data(treename, cur, prefixes, term_id, stanza):
     ontology_iri, ontology_title = tree.get_ontology(cur, prefixes)
 
@@ -204,7 +220,13 @@ def get_tree_html(treename, cur, prefixes, data, href, term, stanza, search=Fals
                 ],
             ]
         )
+    if treename in browsers:
+        description = browsers[treename]["description"]
+        treename = browsers[treename]["name"]
+    else:
+        description = ""
     body_wrapper.append(["h2", treename])
+    body_wrapper.append(["div", {"style": "height: 60px;"}, ["small", description]])
     body = body_wrapper + body
     body = hiccup.render(prefixes, body, href=href)
     return body
