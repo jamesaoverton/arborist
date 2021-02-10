@@ -27,37 +27,31 @@ def main():
             for row in reader:
                 ids.append(get_curie(row[0]))
 
-        child_ancestors = {}
+        child_parent = {}
         print(f"Getting ancestors for {len(ids)} taxa...")
         for tax_id in ids:
             cur.execute(
-                """WITH RECURSIVE active(node) AS (
-                    VALUES (?)
-                    UNION
-                     SELECT object AS node
-                    FROM statements
-                    WHERE predicate = 'rdfs:subClassOf'
-                      AND object = ?
-                    UNION
-                    SELECT object AS node
-                    FROM statements, active
-                    WHERE active.node = statements.stanza
-                      AND statements.predicate = 'rdfs:subClassOf'
-                      AND statements.object NOT LIKE '_:%'
-                  )
-                  SELECT * FROM active""",
-                (tax_id, tax_id),
+                """WITH RECURSIVE ancestors(parent, child) AS (
+                VALUES (?, NULL)
+                UNION
+                -- The non-blank parents of all of the parent terms extracted so far:
+                SELECT object AS parent, subject AS child
+                FROM statements, ancestors
+                WHERE ancestors.parent = statements.stanza
+                  AND statements.predicate = 'rdfs:subClassOf'
+                  AND statements.object NOT LIKE '_:%'
+                )
+                SELECT * FROM ancestors""",
+                (tax_id,),
             )
-            ancestors = []
             for row in cur.fetchall():
-                if row[0] == tax_id:
+                if not row[1]:
                     continue
-                ancestors.append(row[0])
-            child_ancestors[tax_id] = ancestors
+                child_parent[row[1]] = row[0]
 
         with open(args.output, "w") as f:
-            for child, ancestors in child_ancestors.items():
-                f.write(f"{child}\t{','.join(ancestors)}\n")
+            for child, parent in child_parent.items():
+                f.write(f"{child}\t{parent}\n")
 
 
 if __name__ == "__main__":

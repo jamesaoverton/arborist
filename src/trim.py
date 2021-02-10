@@ -16,7 +16,8 @@ def main():
     with sqlite3.connect(args.db) as conn:
         cur = conn.cursor()
         cur.execute(
-            "SELECT DISTINCT stanza FROM statements WHERE stanza LIKE 'iedb-taxon:%' OR stanza LIKE 'NCBITaxon:%'"
+            """SELECT DISTINCT stanza FROM statements
+            WHERE stanza LIKE 'iedb-taxon:%' OR stanza LIKE 'NCBITaxon:%'"""
         )
         for row in cur.fetchall():
             tax_id = row[0]
