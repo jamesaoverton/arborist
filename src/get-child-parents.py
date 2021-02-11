@@ -15,17 +15,20 @@ def get_curie(tax_id):
 def main():
     parser = ArgumentParser()
     parser.add_argument("db", help="Database to get nodes from")
-    parser.add_argument("counts", help="TSV containing epitope counts")
     parser.add_argument("output", help="Output TSV")
     args = parser.parse_args()
 
     with sqlite3.connect(args.db) as conn:
         cur = conn.cursor()
         ids = []
-        with open(args.counts, "r") as f:
-            reader = csv.reader(f, delimiter="\t")
-            for row in reader:
-                ids.append(get_curie(row[0]))
+        cur.execute(
+            """SELECT DISTINCT stanza FROM statements
+            WHERE object = 'owl:Class'
+            AND stanza NOT IN (SELECT object FROM statements
+             WHERE predicate = 'rdfs:subClassOf')"""
+        )
+        for row in cur.fetchall():
+            ids.append(row[0])
 
         child_parent = {}
         print(f"Getting ancestors for {len(ids)} taxa...")
