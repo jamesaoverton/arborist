@@ -6,45 +6,7 @@ import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
-
-def build_counts(tax_id, child_parent, add_counts, count):
-    if tax_id in add_counts:
-        cur_count = add_counts[tax_id]
-        count = cur_count + count
-        add_counts[tax_id] = count
-    else:
-        add_counts[tax_id] = count
-    parent = child_parent.get(tax_id, "OBI:0100026")
-    if parent == "OBI:0100026":
-        return add_counts
-    return build_counts(parent, child_parent, add_counts, count)
-
-
-def get_curie(tax_id):
-    if tax_id.startswith("OBI:"):
-        return tax_id
-    if len(tax_id) == 8 and tax_id.startswith("100"):
-        return "iedb-taxon:" + tax_id
-    return "NCBITaxon:" + tax_id
-
-
-def get_cumulative_counts(cur, count_map, child_ancestors):
-    cuml_counts = {}
-    for child, ancestors in child_ancestors.items():
-        count = count_map.get(child, 0)
-        if child in cuml_counts:
-            cur_count = cuml_counts[child]
-            cuml_counts[child] = cur_count + count
-        else:
-            cuml_counts[child] = count
-
-        for a in ancestors:
-            if a in cuml_counts:
-                cur_count = cuml_counts[a]
-                cuml_counts[a] = cur_count + count
-            else:
-                cuml_counts[a] = count
-    return cuml_counts
+from helpers import copy_database, get_child_ancestors, get_cumulative_counts, get_curie
 
 
 def get_parent(all_removed, child_parents, node):
@@ -148,20 +110,13 @@ def prune(cur, precious, cuml_counts, child_parents):
     return cuml_counts
 
 
-def get_child_ancestors(child_ancestors, child_parents, child, node):
-    p = child_parents.get(node)
-    if not p or p == node:
-        return
-    child_ancestors[child].add(p)
-    get_child_ancestors(child_ancestors, child_parents, child, p)
-
-
 def main():
     parser = ArgumentParser()
     parser.add_argument("db", help="Database to add counts to")
     parser.add_argument("precious", help="List of taxa to keep")
     parser.add_argument("counts", help="TSV containing ID -> epitope count")
-    parser.add_argument("child_parents", help="TSV containing ID -> [aremt")
+    parser.add_argument("child_parents", help="TSV containing ID -> parent")
+    parser.add_argument("cuml_counts", help="TSV output containing cumulative counts")
     parser.add_argument("output", help="Output database")
     args = parser.parse_args()
 
@@ -186,61 +141,25 @@ def main():
             child_ancestors[child] = set()
         get_child_ancestors(child_ancestors, child_parents, child, child)
 
-    with sqlite3.connect(args.db) as conn:
-        # Get stanzas from source database
+    count_map = {}
+    with open(args.counts, "r") as f:
+        reader = csv.reader(f, delimiter="\t")
+        for row in reader:
+            if row[0] == "NULL":
+                continue
+            count_map[get_curie(row[0])] = int(row[1])
+
+    copy_database(args.db, args.output)
+    with sqlite3.connect(args.output) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM statements")
-        rows = cur.fetchall()
-        insert = []
-        for r in rows:
-            vals = []
-            for itm in r:
-                if not itm:
-                    vals.append("null")
-                else:
-                    itm = itm.replace("'", "''")
-                    vals.append(f"'{itm}'")
-            insert.append(", ".join(vals))
 
-        # print(f"Inserting {len(insert)} statements into new database...")
-        insert = ", ".join([f"({x})" for x in insert])
+        cuml_counts = get_cumulative_counts(cur, count_map, child_ancestors)
+        cuml_counts = prune(cur, precious, cuml_counts, child_parents)
 
-        # Insert all into target database then add counts
-        with sqlite3.connect(args.output) as conn_new:
-            cur_new = conn_new.cursor()
-            cur_new.execute(
-                """CREATE TABLE statements (stanza TEXT,
-                                                        subject TEXT,
-                                                        predicate TEXT,
-                                                        object TEXT,
-                                                        value TEXT,
-                                                        datatype TEXT,
-                                                        language TEXT)"""
-            )
-            cur_new.execute("INSERT INTO statements VALUES " + insert)
-            cur_new.execute("CREATE INDEX stanza_idx ON statements (stanza)")
-            cur_new.execute("CREATE INDEX subject_idx ON statements (subject)")
-            cur_new.execute("CREATE INDEX object_idx ON statements (object)")
-            cur_new.execute("ANALYZE")
-            count_map = {}
-            with open(args.counts, "r") as f:
-                reader = csv.reader(f, delimiter="\t")
-                for row in reader:
-                    if row[0] == "NULL":
-                        continue
-                    count_map[get_curie(row[0])] = int(row[1])
-
-            cuml_counts = get_cumulative_counts(cur_new, count_map, child_ancestors)
-            cuml_counts = prune(cur_new, precious, cuml_counts, child_parents)
-
-            print("Adding epitope counts...")
-            for tax_id, count in cuml_counts.items():
-                cur_new.execute(
-                    f"""UPDATE statements SET value = value || ' ({count})'
-                    WHERE stanza = '{tax_id}'
-                      AND subject = '{tax_id}'
-                      AND predicate = 'rdfs:label';"""
-                )
+        with open(args.cuml_counts, "w") as f:
+            writer = csv.writer(f, delimiter="\t", lineterminator="\n")
+            for curie, count in cuml_counts.items():
+                writer.writerow([curie, count])
 
 
 if __name__ == "__main__":

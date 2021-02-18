@@ -23,14 +23,18 @@ browsers = {
         "name": "NCBITaxonomy",
         "description": "The official NCBITaxonomy"
     },
-    "iedb-ncbitaxon": {
-        "name": "Pruned NCBITaxonomy",
+    "ncbi-pruned-plus": {
+        "name": "Pruned NCBI",
         "description": "NCBITaxonomy pruned to represent active species in IEDB"
     },
+    "ncbi-organized-plus": {
+        "name": "Organized NCBI",
+        "description": "Pruned NCBI with stable top level organization"
+    },
     "organism-tree": {
-        "name": "Current Organism Tree",
+        "name": "Organism Tree",
         "description": "The latest version of the organism tree used for IEDB"
-    }
+    },
 }
 
 
