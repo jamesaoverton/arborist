@@ -3,7 +3,7 @@
 # 1. [Install Requirements](install)
 # 2. [Download SOT](refresh_sheets)
 # 3. [Build Dependencies](browser_deps)
-# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,iedb-ncbitaxon,organism-tree&id=NCBITaxon:2759)
+# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,ncbi-orgainzed-plus,organism-tree&id=NCBITaxon:2759)
 
 build:
 	mkdir $@
