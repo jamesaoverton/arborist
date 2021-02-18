@@ -3,7 +3,7 @@
 # 1. [Install Requirements](install)
 # 2. [Download SOT](refresh_sheets)
 # 3. [Build Dependencies](browser_deps)
-# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,ncbi-orgainzed-plus,organism-tree&id=NCBITaxon:2759)
+# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,ncbi-organized-plus,organism-tree&id=NCBITaxon:2759)
 
 build:
 	mkdir $@
@@ -85,9 +85,9 @@ build/precious.tsv: build/ncbi_taxa.tsv build/active-taxa.tsv
 
 # Collapse some nodes based on weights
 build/ncbi-pruned.db build/pruned-counts.tsv: src/prefixes.sql src/prune.py build/ncbi-manual.db build/precious.tsv build/counts.tsv build/child-parents.tsv
-	rm -rf $@
-	sqlite3 $@ < $<
-	python3 $(filter-out src/prefixes.sql,$^) build/cumulative-counts.tsv build/ncbi-pruned.db
+	rm -rf build/ncbi-pruned.db
+	sqlite3 build/ncbi-pruned.db < $<
+	python3 $(filter-out src/prefixes.sql,$^) build/pruned-counts.tsv build/ncbi-pruned.db
 
 # Pruned with epitope counts
 build/ncbi-pruned-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-pruned.db build/pruned-counts.tsv
@@ -134,5 +134,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-.PHONY: browser_deps
 browser_deps: build/ncbitaxon.db build/ncbi-pruned-plus.db build/ncbi-organized-plus.db build/organism-tree.db

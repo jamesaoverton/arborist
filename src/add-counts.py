@@ -15,21 +15,6 @@ def main():
     parser.add_argument("-p", "--child-parents", help="Required when not running with -c")
     args = parser.parse_args()
 
-    child_parents = {}
-    with open(args.child_parents, "r") as f:
-        reader = csv.reader(f, delimiter="\t")
-        for row in reader:
-            if row[0] == row[1]:
-                continue
-            parent = row[1]
-            child_parents[row[0]] = parent
-
-    child_ancestors = defaultdict(set)
-    for child in child_parents.keys():
-        if child not in child_ancestors:
-            child_ancestors[child] = set()
-        get_child_ancestors(child_ancestors, child_parents, child, child)
-
     copy_database(args.db, args.output)
     with sqlite3.connect(args.output) as conn:
         cur = conn.cursor()
@@ -42,6 +27,21 @@ def main():
                         continue
                     cuml_counts[row[0]] = row[1]
         else:
+            child_parents = {}
+            with open(args.child_parents, "r") as f:
+                reader = csv.reader(f, delimiter="\t")
+                for row in reader:
+                    if row[0] == row[1]:
+                        continue
+                    parent = row[1]
+                    child_parents[row[0]] = parent
+
+            child_ancestors = defaultdict(set)
+            for child in child_parents.keys():
+                if child not in child_ancestors:
+                    child_ancestors[child] = set()
+                get_child_ancestors(child_ancestors, child_parents, child, child)
+
             count_map = {}
             with open(args.counts, "r") as f:
                 reader = csv.reader(f, delimiter="\t")
