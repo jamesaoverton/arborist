@@ -96,7 +96,7 @@ build/ncbi-pruned-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-pruned.
 	python3 $(filter-out src/prefixes.sql,$^) $@ -c
 
 # Organized with stable top levels
-build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-pruned.db
+build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-pruned.db build/precious.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@
