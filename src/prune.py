@@ -53,7 +53,7 @@ def find_collapse_nodes(collapse_nodes, precious, cuml_counts, child_parents, pr
 
 
 def find_start(precious, child_parents, node):
-    if node in precious and node != "OBI:0100026":
+    if node in precious and node != "NCBITaxon:1":
         return find_start(precious, child_parents, child_parents[node])
     return node
 
@@ -82,6 +82,8 @@ def prune(cur, precious, cuml_counts, child_parents):
     for s in start:
         # Make sure we start with a non-precious node
         s2 = find_start(precious, child_parents, s)
+        if s2 == "NCBITaxon:1":
+            continue
         parent = child_parents[s2]
         # From there, move up the tree to find nodes to collapse
         find_collapse_nodes(collapse_nodes, precious, cuml_counts, child_parents, [s2], parent)
@@ -116,7 +118,6 @@ def main():
     parser.add_argument("precious", help="List of taxa to keep")
     parser.add_argument("counts", help="TSV containing ID -> epitope count")
     parser.add_argument("child_parents", help="TSV containing ID -> parent")
-    parser.add_argument("cuml_counts", help="TSV output containing cumulative counts")
     parser.add_argument("output", help="Output database")
     args = parser.parse_args()
 
@@ -155,11 +156,6 @@ def main():
 
         cuml_counts = get_cumulative_counts(cur, count_map, child_ancestors)
         cuml_counts = prune(cur, precious, cuml_counts, child_parents)
-
-        with open(args.cuml_counts, "w") as f:
-            writer = csv.writer(f, delimiter="\t", lineterminator="\n")
-            for curie, count in cuml_counts.items():
-                writer.writerow([curie, count])
 
 
 if __name__ == "__main__":

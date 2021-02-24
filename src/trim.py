@@ -1,14 +1,35 @@
 #!/usr/bin/env python3
 
+import csv
 import sqlite3
 
 from argparse import ArgumentParser
+from helpers import get_curie
+
+
+def add_iedb_taxa(cur, iedb_taxa):
+    with open(iedb_taxa, "r") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            tax_id = get_curie(row["Taxon ID"])
+            parent_id = get_curie(row["Parent ID"])
+            label = row["Label"]
+            cur.execute(
+                """
+                INSERT INTO statements (stanza, subject, predicate, object, value) VALUES
+                (?, ?, "rdf:type", "owl:Class", null),
+                (?, ?, "rdfs:subClassOf", ?, null),
+                (?, ?, "rdfs:label", null, ?);
+            """,
+                (tax_id, tax_id, tax_id, tax_id, parent_id, tax_id, tax_id, label),
+            )
 
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("db", help="NCBITaxon database")
     parser.add_argument("active_taxa", help="Active tax IDs used in IEDB")
+    parser.add_argument("iedb_taxa", help="IEDB custom taxa")
     parser.add_argument("output", help="Output database")
     args = parser.parse_args()
 
@@ -95,6 +116,9 @@ def main():
                                                         language TEXT)"""
             )
             cur_new.execute("INSERT INTO statements VALUES " + insert)
+
+            # Add the IEDB taxa
+            add_iedb_taxa(cur_new, args.iedb_taxa)
 
 
 if __name__ == "__main__":

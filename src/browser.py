@@ -23,13 +23,21 @@ browsers = {
         "name": "NCBITaxonomy",
         "description": "The official NCBITaxonomy"
     },
-    "ncbi-pruned-plus": {
-        "name": "Pruned NCBI",
-        "description": "NCBITaxonomy pruned to represent active species in IEDB"
+    "ncbi-trimmed-plus": {
+        "name": "Trimmed NCBI",
+        "description": "NCBI with only active IEDB nodes"
     },
     "ncbi-organized-plus": {
         "name": "Organized NCBI",
-        "description": "Pruned NCBI with stable top level organization"
+        "description": "NCBI-Trimmed with stable top level organization"
+    },
+    "ncbi-pruned-plus": {
+        "name": "Pruned NCBI",
+        "description": "NCBI-Organized with collapsed intermediate nodes"
+    },
+    "ncbi-override-plus": {
+        "name": "Overriden NCBI",
+        "description": "NCBI-Pruned with manual IEDB labels & parents"
     },
     "organism-tree": {
         "name": "Organism Tree",

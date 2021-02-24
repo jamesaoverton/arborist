@@ -3,7 +3,7 @@
 # 1. [Install Requirements](install)
 # 2. [Download SOT](refresh_sheets)
 # 3. [Build Dependencies](browser_deps)
-# 4. [View Browser](./src/browser.py?dbs=ncbitaxon,ncbi-organized-plus,organism-tree&id=NCBITaxon:2759)
+# 4. [View Browser](./src/browser.py?dbs=ncbi-trimmed-plus,ncbi-organized-plus,ncbi-pruned-plus,ncbi-override-plus,organism-tree&id=NCBITaxon:2759)
 
 build:
 	mkdir $@
@@ -36,6 +36,9 @@ build/ncbitaxon.db: src/ncbitaxon-to-db.py build/taxdmp.zip
 	sqlite3 $@ "CREATE INDEX idx_value ON statements (value);"
 	sqlite3 $@ "ANALYZE;"
 
+build/organism-tree.owl: | build
+	# TODO - download from ...
+
 # Intermediate to organism tree - NCBITaxon + IEDB updates
 
 build/ncbi_taxa.tsv: | build
@@ -58,61 +61,52 @@ refresh_sheets:
 build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
 
-# IEDB active nodes + their ancestors (no pruning)
-build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/active-taxa.tsv
-	rm -rf $@
-	sqlite3 $@ < $<
-	python3 src/trim.py build/ncbitaxon.db build/active-taxa.tsv $@
-
-# active nodes + manual changes
-build/ncbi-manual.db: src/prefixes.sql src/update-ncbitaxon.py build/ncbi-trimmed.db $(IEDB_SHEETS)
-	rm -rf $@
-	sqlite3 $@ < $<
-	python3 $(filter-out src/prefixes.sql,$^) $@
-
-# Tax ID -> epitope count
-build/counts.tsv: | build
-	# TODO - query from IEDB
-
-# Tax ID -> parent
-build/child-parents.tsv: src/get-child-parents.py build/ncbi-manual.db
-	python3 $^ $@
-
 # Active taxa + manually updated taxa
 build/precious.tsv: build/ncbi_taxa.tsv build/active-taxa.tsv
 	tail -n +2 $< | cut -f1 > $@
 	cat $(word 2,$^) >> $@
 
-# Collapse some nodes based on weights
-build/ncbi-pruned.db build/pruned-counts.tsv: src/prefixes.sql src/prune.py build/ncbi-manual.db build/precious.tsv build/counts.tsv build/child-parents.tsv
+# Tax ID -> epitope count
+build/counts.tsv: | build
+	# TODO - query from IEDB
+
+### Trees
+
+# IEDB active nodes (including IEDB taxa) + their ancestors (no pruning)
+build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/active-taxa.tsv build/iedb_taxa.tsv
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
+
+# ncbi-trimmed organized with stable top levels
+build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-trimmed.db build/precious.tsv
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
+
+# ncbi-organized with collapsed nodes based on weights
+build/ncbi-pruned.db: src/prefixes.sql src/prune.py build/ncbi-organized.db build/precious.tsv build/counts.tsv build/organized-child-parents.tsv
 	rm -rf build/ncbi-pruned.db
 	sqlite3 build/ncbi-pruned.db < $<
-	python3 $(filter-out src/prefixes.sql,$^) build/pruned-counts.tsv build/ncbi-pruned.db
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
-# Pruned with epitope counts
-build/ncbi-pruned-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-pruned.db build/pruned-counts.tsv
+# ncbi-pruned with manual changes
+build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-pruned.db build/ncbi_taxa.tsv build/taxon_parents.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
-	python3 $(filter-out src/prefixes.sql,$^) $@ -c
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
-# Organized with stable top levels
-build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-pruned.db build/precious.tsv
+# Any database with counts
+build/ncbi-%-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-%.db build/counts.tsv build/%-child-parents.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
-	python3 $(filter-out src/prefixes.sql,$^) $@
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
-# The parents have changed, so create a new parent->child map
-build/organized-child-parents.tsv: src/get-child-parents.py build/ncbi-organized.db
+
+### Parent Maps
+
+build/%-child-parents.tsv: src/get-child-parents.py build/ncbi-%.db
 	python3 $^ $@
-
-# Organized with epitope counts
-build/ncbi-organized-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-organized.db build/organized-child-parents.tsv build/counts.tsv
-	rm -rf $@
-	sqlite3 $@ < $<
-	python3 src/add-counts.py build/ncbi-organized.db build/counts.tsv $@ -p build/organized-child-parents.tsv
-
-build/organism-tree.owl: | build
-	# TODO - download from ...
 
 build/organism-tree.db: src/prefixes.sql build/organism-tree.owl | build/rdftab
 	rm -rf $@
@@ -134,4 +128,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-browser_deps: build/ncbitaxon.db build/ncbi-pruned-plus.db build/ncbi-organized-plus.db build/organism-tree.db
+browser_deps: build/ncbitaxon.db build/ncbi-trimmed-plus.db build/ncbi-override-plus.db build/ncbi-pruned-plus.db build/ncbi-organized-plus.db build/organism-tree.db

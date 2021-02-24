@@ -216,7 +216,14 @@ def organize_bacterium(cur, precious):
 
 
 def organize_eukaryote(cur, precious):
-    # First get all the children of eukaryote
+    # First move EUKARYOTES to top leve
+    e_str = ", ".join([f"'{x}'" for x in EUKARYOTES])
+    cur.execute(
+        f"""UPDATE statements SET object = 'NCBITaxon:2759'
+        WHERE predicate = 'rdfs:subClassOf' AND subject IN ({e_str})"""
+    )
+
+    # Then get all the children of eukaryote
     cur.execute(
         """SELECT DISTINCT subject FROM statements
         WHERE predicate = 'rdfs:subClassOf' AND object = 'NCBITaxon:2759';"""
@@ -225,6 +232,7 @@ def organize_eukaryote(cur, precious):
     for row in cur.fetchall():
         all_eukaryotes.append(row[0])
 
+    # Move any non-EUKARYOTES to other
     other_eukaryotes = [x for x in all_eukaryotes if x not in EUKARYOTES]
     if other_eukaryotes:
         cur.execute(
