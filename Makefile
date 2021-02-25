@@ -61,10 +61,11 @@ refresh_sheets:
 build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
 
-# Active taxa + manually updated taxa
-build/precious.tsv: build/ncbi_taxa.tsv build/active-taxa.tsv
+# Active taxa + manually updated taxa (labels & parents)
+build/precious.tsv: build/ncbi_taxa.tsv build/taxon_parents.tsv build/active-taxa.tsv
 	tail -n +2 $< | cut -f1 > $@
-	cat $(word 2,$^) >> $@
+	tail -n +2 $(word 2,$^) | cut -f1 >> $@
+	cat $(word 3,$^) >> $@
 
 # Tax ID -> epitope count
 build/counts.tsv: | build
