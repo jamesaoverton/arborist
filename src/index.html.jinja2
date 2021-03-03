@@ -18,6 +18,9 @@
       padding-left: 2em;
       list-style-type: none !important;
     }
+    .highlight {
+      background-color: yellow !important;
+    }
     .hierarchy {
       padding-left: 0em;
       list-style-type: none !important;
@@ -233,5 +236,14 @@
       }
     return str.join("&");
   }
+  (function() {
+    var elements = document.querySelectorAll('[resource]');
+    for ( var i = 0; i < elements.length; i ++ ) {
+      var curie = elements[i].getAttribute('resource');
+      if (curie.startsWith('iedb-taxon:')) {
+        elements[i].setAttribute('class', 'highlight');
+      }
+    }
+  })();
 </script>
 </html>
