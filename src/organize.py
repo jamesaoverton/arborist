@@ -115,6 +115,8 @@ def move_to_other(cur, parent_tax_id, parent_tax_label, others, precious_others=
             if not ancestors:
                 continue
             other_organisms.add(ancestors[-1])
+        if not other_organisms:
+            other_organisms.add(o)
         o_str = ", ".join([f"'{x}'" for x in other_organisms])
         cur.execute(
             f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
@@ -205,110 +207,43 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
         move_to_other(cur, top_level_id, top_level_label, non_at_rank, precious_others=precious_others)
 
 
-def organize_archeobacterium(cur, precious):
-    # move species to top-level
-    move_up(cur, "2157", "Archeobacterium", "species", precious=precious)
+def organize(cur, top_level, precious):
+    for curie, details in top_level.items():
+        parent = get_curie(details["Parent ID"])
 
-
-def organize_bacterium(cur, precious):
-    # move phylum to top-level
-    move_up(cur, "2", "Bacterium", "phylum", precious=precious)
-
-
-def organize_eukaryote(cur, precious):
-    # First move EUKARYOTES to top leve
-    e_str = ", ".join([f"'{x}'" for x in EUKARYOTES])
-    cur.execute(
-        f"""UPDATE statements SET object = 'NCBITaxon:2759'
-        WHERE predicate = 'rdfs:subClassOf' AND subject IN ({e_str})"""
-    )
-
-    # Then get all the children of eukaryote
-    cur.execute(
-        """SELECT DISTINCT subject FROM statements
-        WHERE predicate = 'rdfs:subClassOf' AND object = 'NCBITaxon:2759';"""
-    )
-    all_eukaryotes = []
-    for row in cur.fetchall():
-        all_eukaryotes.append(row[0])
-
-    # Move any non-EUKARYOTES to other
-    other_eukaryotes = [x for x in all_eukaryotes if x not in EUKARYOTES]
-    if other_eukaryotes:
+        # First, rehome this node
         cur.execute(
-            """INSERT INTO statements (stanza, subject, predicate, object, value) VALUES
-            ('iedb-taxon:2759-other',
-             'iedb-taxon:2759-other',
-             'rdfs:subClassOf',
-             'NCBITaxon:2759',
-             null),
-            ('iedb-taxon:2759-other',
-             'iedb-taxon:2759-other',
-             'rdfs:label',
-             null,
-             'Other Eukaryote');"""
-        )
-        oe_string = ", ".join([f"'{x}'" for x in other_eukaryotes])
-        cur.execute(
-            f"""UPDATE statements SET object = 'iedb-taxon:2759-other'
-            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({oe_string})"""
+            "UPDATE statements SET object = ? WHERE subject = ? AND predicate = 'rdfs:subClassOf'",
+            (parent, curie)
         )
 
-    organize_fungus(cur, precious)
-    organize_metazoan(cur)
-    organize_seed_plant(cur, precious)
+        rank = details.get("Rank", "").strip()
+        if rank == "":
+            # Nothing to do, everything stays as-is
+            continue
 
+        if rank == "manual":
+            # Everything NOT in this set gets moved to other
+            cur.execute(
+                "SELECT DISTINCT subject FROM statements WHERE object = ? AND predicate = 'rdfs:subClassOf'",
+                (curie,)
+            )
+            others = []
+            for row in cur.fetchall():
+                if row[0] not in top_level:
+                    others.append(row[0])
+            move_to_other(cur, details["ID"], details["Label"], others)
+            continue
 
-def organize_fungus(cur, precious):
-    move_up(cur, "4751", "Fungus", "phylum", precious=precious)
-
-
-def organize_metazoan(cur):
-    # Get direct children of metazoan
-    cur.execute(
-        """SELECT DISTINCT subject FROM statements
-        WHERE predicate = 'rdfs:subClassOf' AND object = 'NCBITaxon:33208';"""
-    )
-    all_metazoans = []
-    for row in cur.fetchall():
-        all_metazoans.append(row[0])
-
-    # Set the METAZOANS to be direct children of Metazoan
-    met_string = ", ".join([f"'{x}'" for x in METAZOANS])
-    cur.execute(
-        f"""UPDATE statements SET object = 'NCBITaxon:33208'
-        WHERE predicate = 'rdfs:subClassOf' AND subject IN ({met_string});"""
-    )
-
-    # Handle other metazoans
-    other_metazoans = [x for x in all_metazoans if x not in METAZOANS]
-    if other_metazoans:
-        move_to_other(cur, "33208", "Metazoan (multicellular animal)", other_metazoans)
-    organize_vertebrate(cur)
-
-
-def organize_vertebrate(cur):
-    pass
-
-
-def organize_seed_plant(cur, precious):
-    extras = [
-        "iedb-taxon:10002037",
-        "iedb-taxon:10002038",
-        "iedb-taxon:10002036",
-        "iedb-taxon:10002035",
-    ]
-    move_up(cur, "58024", "Spermatophyte (seed plant)", "family", extras=extras, precious=precious)
-
-
-def organize_virus(cur, precious):
-    # Move family to top-level, keep DNA & RNA viruses
-    move_up(cur, "10239", "Virus", "family", extras=["iedb-taxon:10002039", "iedb-taxon:10002040"], precious=precious)
+        # Otherwise, move all of given rank to top-level
+        extras = [get_curie(x) for x in details.get("Extra Nodes", "").split(", ") if x.strip() != ""]
+        move_up(cur, details["ID"], details["Label"], rank, extras=extras, precious=precious)
 
 
 def main():
     parser = ArgumentParser()
     parser.add_argument("db")
+    parser.add_argument("top_level")
     parser.add_argument("precious")
     parser.add_argument("output")
     args = parser.parse_args()
@@ -318,6 +253,12 @@ def main():
         reader = csv.reader(f, delimiter="\t")
         for row in reader:
             precious.append(get_curie(row[0]))
+
+    top_level = {}
+    with open(args.top_level, "r") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+        for row in reader:
+            top_level[get_curie(row["ID"])] = row
 
     copy_database(args.db, args.output)
     with sqlite3.connect(args.output) as conn:
@@ -335,10 +276,7 @@ def main():
              null,
              'Other Organism');"""
         )
-        organize_archeobacterium(cur, precious)
-        organize_bacterium(cur, precious)
-        organize_eukaryote(cur, precious)
-        organize_virus(cur, precious)
+        organize(cur, top_level, precious)
 
 
 if __name__ == "__main__":

@@ -39,7 +39,7 @@ build/ncbitaxon.db: src/ncbitaxon-to-db.py build/taxdmp.zip
 build/organism-tree.owl: | build
 	# TODO - download from ...
 
-# Intermediate to organism tree - NCBITaxon + IEDB updates
+# Manual IEDB Sheets
 
 build/ncbi_taxa.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=0"
@@ -50,13 +50,20 @@ build/iedb_taxa.tsv: | build
 build/taxon_parents.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=1849479413"
 
-IEDB_SHEETS := build/ncbi_taxa.tsv build/iedb_taxa.tsv build/taxon_parents.tsv
+build/top_level.tsv: | build
+	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=74523853"
+
+IEDB_SHEETS := build/ncbi_taxa.tsv build/iedb_taxa.tsv build/taxon_parents.tsv build/top_level.tsv
 iedb_sheets: $(IEDB_SHEETS)
 
 .PHONY: refresh_sheets
 refresh_sheets:
 	rm -rf $(IEDB_SHEETS)
 	make iedb_sheets
+
+# Tax ID -> epitope count
+build/counts.tsv: | build
+	# TODO - query from IEDB
 
 build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
@@ -67,10 +74,6 @@ build/precious.tsv: build/ncbi_taxa.tsv build/taxon_parents.tsv build/active-tax
 	tail -n +2 $(word 2,$^) | cut -f1 >> $@
 	cat $(word 3,$^) >> $@
 
-# Tax ID -> epitope count
-build/counts.tsv: | build
-	# TODO - query from IEDB
-
 ### Trees
 
 # IEDB active nodes (including IEDB taxa) + their ancestors (no pruning)
@@ -80,7 +83,7 @@ build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/act
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
 # ncbi-trimmed organized with stable top levels
-build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-trimmed.db build/precious.tsv
+build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-trimmed.db build/top_level.tsv build/precious.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)

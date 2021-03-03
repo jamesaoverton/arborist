@@ -70,6 +70,8 @@ def get_cumulative_counts(cur, count_map, child_ancestors):
 def get_curie(tax_id):
     if tax_id.startswith("OBI:"):
         return tax_id
+    if tax_id.endswith("other"):
+        return "iedb-taxon:" + tax_id
     if len(tax_id) == 8 and tax_id.startswith("100"):
         return "iedb-taxon:" + tax_id
     return "NCBITaxon:" + tax_id
