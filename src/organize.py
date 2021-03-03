@@ -9,18 +9,6 @@ from collections import defaultdict
 from helpers import copy_database, get_curie
 
 
-EUKARYOTES = ["NCBITaxon:4751", "NCBITaxon:33208", "NCBITaxon:58024"]
-METAZOANS = [
-    "NCBITaxon:6854",
-    "NCBITaxon:6657",
-    "NCBITaxon:50557",
-    "NCBITaxon:6447",
-    "NCBITaxon:6231",
-    "NCBITaxon:6157",
-    "NCBITaxon:7742",
-]
-
-
 def get_all_ancestors(child_parent, node, limit, ancestors=None):
     if not ancestors:
         ancestors = []
@@ -74,7 +62,9 @@ def get_descendants(cur, node, limit, descendants):
         get_descendants(cur, row[0], limit, descendants)
 
 
-def move_to_other(cur, parent_tax_id, parent_tax_label, others, precious_others=None):
+def move_to_other(
+    cur, parent_tax_id, parent_tax_label, others, rank="species", precious_others=None
+):
     cur.execute(
         f"""INSERT INTO statements (stanza, subject, predicate, object, value) VALUES
         ('iedb-taxon:{parent_tax_id}-other',
@@ -88,35 +78,45 @@ def move_to_other(cur, parent_tax_id, parent_tax_label, others, precious_others=
          null,
          'Other {parent_tax_label}');"""
     )
+
+    if rank == "none":
+        # Just set the others to be children of "Other" and return
+        others_str = ", ".join([f"'{x}'" for x in others])
+        cur.execute(
+            f"""UPDATE statements SET object = 'iedb-taxon:{parent_tax_id}-other'
+            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({others_str})"""
+        )
+        return
+
     for o in others:
         # Create map of parent -> child and ranks
         child_parent = {}
         ranks = {}
         get_descendants_and_ranks(cur, child_parent, ranks, o)
 
-        # Find all species-level
-        species = [x for x, y in ranks.items() if y == "NCBITaxon:species"]
+        # Find all at rank level
+        at_rank = [x for x, y in ranks.items() if y == "NCBITaxon:" + rank]
 
         # These get bumped up to 'other' then all extra nodes get deleted
-        species_str = ", ".join([f"'{x}'" for x in species])
+        at_rank_str = ", ".join([f"'{x}'" for x in at_rank])
         cur.execute(
             f"""UPDATE statements SET object = 'iedb-taxon:{parent_tax_id}-other'
-            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({species_str})"""
+            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({at_rank_str})"""
         )
 
         # Find nodes to move to 'other organism'
         other_organisms = set()
-        for s in species:
+        for s in at_rank:
             if s not in child_parent:
                 continue
-            ancestors = get_all_ancestors(
-                child_parent, s, "NCBITaxon:" + parent_tax_id
-            )
+            ancestors = get_all_ancestors(child_parent, s, "NCBITaxon:" + parent_tax_id)
             if not ancestors:
                 continue
             other_organisms.add(ancestors[-1])
         if not other_organisms:
             other_organisms.add(o)
+        print(parent_tax_label)
+        print(other_organisms)
         o_str = ", ".join([f"'{x}'" for x in other_organisms])
         cur.execute(
             f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
@@ -204,7 +204,9 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
 
     # Move all species-level terms to "Other" then delete ancestors
     if non_at_rank or precious_others:
-        move_to_other(cur, top_level_id, top_level_label, non_at_rank, precious_others=precious_others)
+        move_to_other(
+            cur, top_level_id, top_level_label, non_at_rank, precious_others=precious_others
+        )
 
 
 def organize(cur, top_level, precious):
@@ -214,7 +216,7 @@ def organize(cur, top_level, precious):
         # First, rehome this node
         cur.execute(
             "UPDATE statements SET object = ? WHERE subject = ? AND predicate = 'rdfs:subClassOf'",
-            (parent, curie)
+            (parent, curie),
         )
 
         rank = details.get("Rank", "").strip()
@@ -225,18 +227,24 @@ def organize(cur, top_level, precious):
         if rank == "manual":
             # Everything NOT in this set gets moved to other
             cur.execute(
-                "SELECT DISTINCT subject FROM statements WHERE object = ? AND predicate = 'rdfs:subClassOf'",
-                (curie,)
+                """SELECT DISTINCT subject FROM statements
+                WHERE object = ? AND predicate = 'rdfs:subClassOf'""",
+                (curie,),
             )
             others = []
             for row in cur.fetchall():
                 if row[0] not in top_level:
                     others.append(row[0])
-            move_to_other(cur, details["ID"], details["Label"], others)
+            other_rank = details.get("Others", "")
+            if other_rank.strip() == "":
+                other_rank = "species"
+            move_to_other(cur, details["ID"], details["Label"], others, rank=other_rank)
             continue
 
         # Otherwise, move all of given rank to top-level
-        extras = [get_curie(x) for x in details.get("Extra Nodes", "").split(", ") if x.strip() != ""]
+        extras = [
+            get_curie(x) for x in details.get("Extra Nodes", "").split(", ") if x.strip() != ""
+        ]
         move_up(cur, details["ID"], details["Label"], rank, extras=extras, precious=precious)
 
 
