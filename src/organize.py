@@ -115,8 +115,6 @@ def move_to_other(
             other_organisms.add(ancestors[-1])
         if not other_organisms:
             other_organisms.add(o)
-        print(parent_tax_label)
-        print(other_organisms)
         o_str = ", ".join([f"'{x}'" for x in other_organisms])
         cur.execute(
             f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
