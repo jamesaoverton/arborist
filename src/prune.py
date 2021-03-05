@@ -6,7 +6,7 @@ import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import copy_database, get_child_ancestors, get_cumulative_counts, get_curie, get_descendants_and_ranks
+from helpers import copy_database, get_child_ancestors, get_cumulative_counts, get_curie, get_descendants, get_descendants_and_ranks
 
 
 def get_parent(all_removed, child_parents, node):
@@ -75,6 +75,28 @@ def move_species_up(cur, precious, nodes, limit=20):
         species = [x for x, y in ranks.items() if y == "NCBITaxon:species"]
 
         if len(species) < limit:
+            # Find list of all descendants, and if there is a precious node in descendants, use that
+            descendants = []
+            get_descendants(cur, tax_id, species, descendants)
+            precious_descendants = set(descendants).intersection(set(precious))
+
+            replace = None
+            if precious_descendants:
+                if len(precious_descendants) > 1:
+                    print("More than one precious under " + tax_id)
+                    print(precious_descendants)
+
+                # Move this term to replace the current tax_id
+                replace = list(precious_descendants)[0]
+                cur.execute(
+                    """SELECT object FROM statements
+                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""", (tax_id,))
+
+                parent = cur.fetchone()[0]
+                cur.execute(
+                    """UPDATE statements SET object = ?
+                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""", (parent, replace))
+
             # Get direct children of this node
             cur.execute(
                 """SELECT DISTINCT subject FROM statements
@@ -83,29 +105,36 @@ def move_species_up(cur, precious, nodes, limit=20):
             )
 
             # Move the non-species to other organism
-            move_to_other = [x[0] for x in cur.fetchall()]
+            move_to_other = [x[0] for x in cur.fetchall() if x[0] != replace]
             move_str = ", ".join([f"'{x}'" for x in move_to_other])
             cur.execute(
                 f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
                 WHERE subject IN ({move_str}) AND predicate = 'rdfs:subClassOf'"""
             )
+            if replace:
+                # Get rid of the old tax_id
+                cur.execute(
+                    """UPDATE statements SET object = 'iedb-taxon:0100026-other'
+                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""", (tax_id,))
 
             # Move the species back to the node
             species_str = ", ".join([f"'{x}'" for x in species])
+            if replace:
+                tax_id = replace
             cur.execute(
                 f"""UPDATE statements SET object = '{tax_id}'
                 WHERE subject IN ({species_str}) AND predicate = 'rdfs:subClassOf'"""
             )
             continue
-        else:
+        """else:
             # Work down until we find the node with < limit species
             cur.execute(
-                """SELECT DISTINCT subject FROM statements
-                WHERE predicate = 'rdfs:subClass' AND object = ?""",
+                ""SELECT DISTINCT subject FROM statements
+                WHERE predicate = 'rdfs:subClass' AND object = ?"",
                 (tax_id,)
             )
             children = [x[0] for x in cur.fetchall()]
-            move_species_up(cur, precious, children)
+            move_species_up(cur, precious, children)"""
 
 
 def prune(cur, precious, cuml_counts, child_parents):
@@ -152,14 +181,14 @@ def prune(cur, precious, cuml_counts, child_parents):
     print("Removing circular logic...")
     cur.execute("DELETE FROM statements WHERE object = stanza")
 
-    print("Moving species up...")
-    cur.execute(
-        "SELECT DISTINCT subject FROM statements WHERE object = 'NCBITaxon:order'"
-    )
-    families = [x[0] for x in cur.fetchall()]
-    move_species_up(cur, precious, families)
-
-    return cuml_counts
+    ranks = ["phylum", "subphylum", "superclass", "class", "subclass", "superorder", "order", "suborder", "superfamily", "family", "subfamily"]
+    for r in ranks:
+        print(f"Moving species up for {r}...")
+        cur.execute(
+            f"SELECT DISTINCT subject FROM statements WHERE object = 'NCBITaxon:{r}'"
+        )
+        at_rank = [x[0] for x in cur.fetchall()]
+        move_species_up(cur, precious, at_rank)
 
 
 def main():
@@ -205,7 +234,7 @@ def main():
         cur = conn.cursor()
 
         cuml_counts = get_cumulative_counts(cur, count_map, child_ancestors)
-        cuml_counts = prune(cur, precious, cuml_counts, child_parents)
+        prune(cur, precious, cuml_counts, child_parents)
 
 
 if __name__ == "__main__":

@@ -69,9 +69,10 @@ build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
 
 # Active taxa + manually updated taxa (labels & parents)
-build/precious.tsv: build/taxon_parents.tsv build/active-taxa.tsv
+build/precious.tsv: build/ncbi_taxa.tsv build/taxon_parents.tsv build/active-taxa.tsv
 	tail -n +2 $< | cut -f1 > $@
-	cat $(word 2,$^) >> $@
+	tail -n +2 $(word 2,$^) | cut -f1 >> $@
+	cat $(word 3,$^) >> $@
 
 ### Trees
 

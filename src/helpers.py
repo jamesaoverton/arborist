@@ -77,6 +77,20 @@ def get_curie(tax_id):
     return "NCBITaxon:" + tax_id
 
 
+def get_descendants(cur, node, limits, descendants):
+    # Get the children and maybe iterate
+    cur.execute(
+        """SELECT DISTINCT subject FROM statements
+        WHERE object = ? AND predicate = 'rdfs:subClassOf'""",
+        (node,),
+    )
+    for row in cur.fetchall():
+        if row[0] in limits:
+            return
+        descendants.append(row[0])
+        get_descendants(cur, row[0], limits, descendants)
+
+
 def get_descendants_and_ranks(cur, child_parent, ranks, node):
     # Get the rank of this node
     cur.execute(

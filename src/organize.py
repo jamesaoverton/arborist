@@ -6,7 +6,7 @@ import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import copy_database, get_curie, get_descendants_and_ranks
+from helpers import copy_database, get_curie, get_descendants, get_descendants_and_ranks
 
 
 def get_all_ancestors(child_parent, node, limit, ancestors=None):
@@ -26,20 +26,6 @@ def get_top_ancestor(child_parent, node, limit):
     if parent == limit:
         return node
     return get_top_ancestor(child_parent, parent, limit)
-
-
-def get_descendants(cur, node, limit, descendants):
-    # Get the children and maybe iterate
-    cur.execute(
-        """SELECT DISTINCT subject FROM statements
-        WHERE object = ? AND predicate = 'rdfs:subClassOf'""",
-        (node,),
-    )
-    for row in cur.fetchall():
-        if row[0] == limit:
-            return
-        descendants.append(row[0])
-        get_descendants(cur, row[0], limit, descendants)
 
 
 def move_to_other(
@@ -154,7 +140,7 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
         move = ancestors[-1]
         # Check for a descendant that is in precious and make sure to move it to 'other'
         descendants = []
-        get_descendants(cur, move, f, descendants)
+        get_descendants(cur, move, [f], descendants)
         if not set(precious).isdisjoint(set(descendants)):
             for x in list(set(precious) & set(descendants)):
                 precious_others.add(x)
