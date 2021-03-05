@@ -15,5 +15,6 @@ INSERT OR IGNORE INTO prefix VALUES
 
 ("obo",        "http://purl.obolibrary.org/obo/"),
 ("NCBITaxon",  "http://purl.obolibrary.org/obo/NCBITaxon_"),
+("ncbit",  "http://purl.obolibrary.org/obo/NCBITaxon#"),
 ("OBI",        "http://purl.obolibrary.org/obo/OBI_"),
 ("iedb-taxon", "http://iedb.org/taxon/");

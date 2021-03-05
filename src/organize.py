@@ -6,7 +6,7 @@ import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import copy_database, get_curie
+from helpers import copy_database, get_curie, get_descendants_and_ranks
 
 
 def get_all_ancestors(child_parent, node, limit, ancestors=None):
@@ -26,26 +26,6 @@ def get_top_ancestor(child_parent, node, limit):
     if parent == limit:
         return node
     return get_top_ancestor(child_parent, parent, limit)
-
-
-def get_descendants_and_ranks(cur, child_parent, ranks, node):
-    # Get the rank of this node
-    cur.execute(
-        "SELECT object FROM statements WHERE predicate = 'ncbitaxon:has_rank' AND subject = ?",
-        (node,),
-    )
-    res = cur.fetchone()
-    if res:
-        ranks[node] = res[0]
-    # Get the children and maybe iterate
-    cur.execute(
-        """SELECT DISTINCT subject FROM statements
-        WHERE object = ? AND predicate = 'rdfs:subClassOf'""",
-        (node,),
-    )
-    for row in cur.fetchall():
-        child_parent[row[0]] = node
-        get_descendants_and_ranks(cur, child_parent, ranks, row[0])
 
 
 def get_descendants(cur, node, limit, descendants):
@@ -217,7 +197,7 @@ def organize(cur, top_level, precious):
             (parent, curie),
         )
 
-        rank = details.get("Rank", "").strip()
+        rank = details.get("Child Rank", "").strip()
         if rank == "":
             # Nothing to do, everything stays as-is
             continue
@@ -233,7 +213,7 @@ def organize(cur, top_level, precious):
             for row in cur.fetchall():
                 if row[0] not in top_level:
                     others.append(row[0])
-            other_rank = details.get("Others", "")
+            other_rank = details.get("Other Rank", "")
             if other_rank.strip() == "":
                 other_rank = "species"
             move_to_other(cur, details["ID"], details["Label"], others, rank=other_rank)

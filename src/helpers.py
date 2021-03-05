@@ -75,3 +75,23 @@ def get_curie(tax_id):
     if len(tax_id) == 8 and tax_id.startswith("100"):
         return "iedb-taxon:" + tax_id
     return "NCBITaxon:" + tax_id
+
+
+def get_descendants_and_ranks(cur, child_parent, ranks, node):
+    # Get the rank of this node
+    cur.execute(
+        "SELECT object FROM statements WHERE predicate = 'ncbitaxon:has_rank' AND subject = ?",
+        (node,),
+    )
+    res = cur.fetchone()
+    if res:
+        ranks[node] = res[0]
+    # Get the children and maybe iterate
+    cur.execute(
+        """SELECT DISTINCT subject FROM statements
+        WHERE object = ? AND predicate = 'rdfs:subClassOf'""",
+        (node,),
+    )
+    for row in cur.fetchall():
+        child_parent[row[0]] = node
+        get_descendants_and_ranks(cur, child_parent, ranks, row[0])
