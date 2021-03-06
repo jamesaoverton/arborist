@@ -6,7 +6,14 @@ import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import copy_database, get_child_ancestors, get_cumulative_counts, get_curie, get_descendants, get_descendants_and_ranks
+from helpers import (
+    copy_database,
+    get_child_ancestors,
+    get_cumulative_counts,
+    get_curie,
+    get_descendants,
+    get_descendants_and_ranks,
+)
 
 
 def get_parent(all_removed, child_parents, node):
@@ -35,7 +42,9 @@ def find_collapse_nodes(collapse_nodes, precious, cuml_counts, child_parents, pr
         if not parent or parent == "OBI:0100026":
             return
         prev_nodes.append(node)
-        find_collapse_nodes(collapse_nodes, precious, cuml_counts, child_parents, prev_nodes, parent)
+        find_collapse_nodes(
+            collapse_nodes, precious, cuml_counts, child_parents, prev_nodes, parent
+        )
 
     # Start again
     if len(prev_nodes) > 1:
@@ -90,18 +99,22 @@ def move_species_up(cur, precious, nodes, limit=20):
                 replace = list(precious_descendants)[0]
                 cur.execute(
                     """SELECT object FROM statements
-                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""", (tax_id,))
+                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""",
+                    (tax_id,),
+                )
 
                 parent = cur.fetchone()[0]
                 cur.execute(
                     """UPDATE statements SET object = ?
-                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""", (parent, replace))
+                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""",
+                    (parent, replace),
+                )
 
             # Get direct children of this node
             cur.execute(
                 """SELECT DISTINCT subject FROM statements
                 WHERE predicate = 'rdfs:subClassOf' AND object = ?""",
-                (tax_id,)
+                (tax_id,),
             )
 
             # Move the non-species to other organism
@@ -115,7 +128,9 @@ def move_species_up(cur, precious, nodes, limit=20):
                 # Get rid of the old tax_id
                 cur.execute(
                     """UPDATE statements SET object = 'iedb-taxon:0100026-other'
-                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""", (tax_id,))
+                    WHERE subject = ? AND predicate = 'rdfs:subClassOf'""",
+                    (tax_id,),
+                )
 
             # Move the species back to the node
             species_str = ", ".join([f"'{x}'" for x in species])
@@ -181,12 +196,10 @@ def prune(cur, precious, cuml_counts, child_parents):
     print("Removing circular logic...")
     cur.execute("DELETE FROM statements WHERE object = stanza")
 
-    ranks = ["phylum", "subphylum", "superclass", "class", "subclass", "superorder", "order", "suborder", "superfamily", "family", "subfamily"]
+    ranks = ["superorder", "order", "suborder", "superfamily", "family", "subfamily"]
     for r in ranks:
         print(f"Moving species up for {r}...")
-        cur.execute(
-            f"SELECT DISTINCT subject FROM statements WHERE object = 'NCBITaxon:{r}'"
-        )
+        cur.execute(f"SELECT DISTINCT subject FROM statements WHERE object = 'NCBITaxon:{r}'")
         at_rank = [x[0] for x in cur.fetchall()]
         move_species_up(cur, precious, at_rank)
 
