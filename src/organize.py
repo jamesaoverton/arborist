@@ -212,6 +212,15 @@ def organize(cur, top_level, precious):
         move_up(cur, details["ID"], details["Label"], rank, extras=extras, precious=precious)
 
 
+def get_line(top_structure, line, node):
+    children = top_structure.get(node)
+    if not children:
+        return line
+    line.extend(children)
+    for c in children:
+        get_line(top_structure, line, c)
+
+
 def main():
     parser = ArgumentParser()
     parser.add_argument("db")
@@ -226,11 +235,30 @@ def main():
         for row in reader:
             precious.append(get_curie(row[0]))
 
-    top_level = {}
+    # ID -> Details
+    top_level_unordered = {}
+    # Parent -> Children
+    top_structure = defaultdict(set)
     with open(args.top_level, "r") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
-            top_level[get_curie(row["ID"])] = row
+            tax_id = get_curie(row["ID"])
+            parent_id = get_curie(row["Parent ID"])
+            if parent_id not in top_structure:
+                top_structure[parent_id] = set()
+            top_structure[parent_id].add(tax_id)
+            top_level_unordered[tax_id] = row
+
+    # Sort top level by structure (starting with children of cellular organism)
+    orgs = top_structure["NCBITaxon:131567"]
+    full_line = []
+    for o in orgs:
+        line = [o]
+        get_line(top_structure, line, o)
+        full_line.extend(line)
+    # Go from lowest -> highest level
+    full_line.reverse()
+    top_level = {node: top_level_unordered[node] for node in full_line}
 
     copy_database(args.db, args.output)
     with sqlite3.connect(args.output) as conn:
