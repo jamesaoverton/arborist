@@ -173,15 +173,7 @@
       datumTokenizer: Bloodhound.tokenizers.obj.nonword('display_name'),
       queryTokenizer: Bloodhound.tokenizers.nonword,
       sorter: function(a, b) {
-        A = a.display_name.length;
-        B = b.display_name.length;
-        if (A < B) {
-           return -1;
-        }
-        else if (A > B) {
-           return 1;
-        }
-        else return 0;
+        return a.order - b.order;
       },
       remote: {
         url: '?dbs=' + getParameterByName('dbs') + '&text=%QUERY&format=json',
@@ -198,15 +190,15 @@
     }, {
       name: table,
       source: bloodhound,
-      display: 'display_name',
+      display: 'label',
       limit: 40
     });
     $(node).bind('click', function(e) {
       $(node).select();
     });
     $(node).bind('typeahead:select', function(ev, suggestion) {
-      $(node).prev().val(suggestion.value);
-      go(table, suggestion.value);
+      $(node).prev().val(suggestion.id);
+      go(table, suggestion.id);
     });
     $(node).bind('keypress',function(e) {
       if(e.which == 13) {
