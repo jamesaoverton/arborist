@@ -117,6 +117,11 @@
   </style>
 </head>
 <body>
+  <div class="row" style="margin-left:30px;">
+    <div class="form-row mt-2 mb-2 col-md-11" style="padding-left:0px">
+      <input id="statements-typeahead" class="typeahead form-control" type="text" value="" placeholder="Search"></input>
+    </div>
+  </div>
   <div class="row flex-row flex-nowrap" style="margin-left:0px !important; margin-right: 0px !important;">
     <div class="col-xxl" style="margin-left:15px;">
       {{ first }}
@@ -136,17 +141,7 @@
 <script type="text/javascript" src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js"></script>
 <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/typeahead.js/0.11.1/typeahead.bundle.min.js"></script>
 <script type="text/javascript">
-  function show_children() {
-    hidden = $('#children li:hidden').slice(0, 100);
-    if (hidden.length > 1) {
-        hidden.show();
-        setTimeout(show_children, 100);
-    } else {
-        console.log("DONE");
-    }
-    $('#more').hide();
-  }
-  $('#search-form').submit(function () {
+    $('#search-form').submit(function () {
       $(this)
           .find('input[name]')
           .filter(function () {
@@ -158,9 +153,9 @@
     newPage = prompt("Jump to page", currentPage);
     if (newPage) {
       href = window.location.href.replace("page="+currentPage, "page="+newPage);
-      window.location.href = href
+      window.location.href = href;
     }
-  };
+  }
   function getParameterByName(name, url = window.location.href) {
     name = name.replace(/[\[\]]/g, '\\$&');
     var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
@@ -173,13 +168,13 @@
     if (!node.id || !node.id.endsWith("-typeahead")) {
       return;
     }
-    table = node.id.replace("-typeahead", "")
+    table = node.id.replace("-typeahead", "");
     var bloodhound = new Bloodhound({
       datumTokenizer: Bloodhound.tokenizers.obj.nonword('display_name'),
       queryTokenizer: Bloodhound.tokenizers.nonword,
       sorter: function(a, b) {
-        A = a['display_name'].length;
-        B = b['display_name'].length;
+        A = a.display_name.length;
+        B = b.display_name.length;
         if (A < B) {
            return -1;
         }
@@ -192,7 +187,7 @@
         url: '?dbs=' + getParameterByName('dbs') + '&text=%QUERY&format=json',
         wildcard: '%QUERY',
         transform : function(response) {
-            return bloodhound.sorter(response)
+            return bloodhound.sorter(response);
         }
       }
     });
@@ -210,22 +205,22 @@
       $(node).select();
     });
     $(node).bind('typeahead:select', function(ev, suggestion) {
-      $(node).prev().val(suggestion['value']);
-      go(table, suggestion['value'])
+      $(node).prev().val(suggestion.value);
+      go(table, suggestion.value);
     });
     $(node).bind('keypress',function(e) {
       if(e.which == 13) {
         go(table, $('#' + table + '-hidden').val());
       }
     });
-  };
+  }
   $('.typeahead').each(function() { configure_typeahead(this); });
   function go(table, value) {
-    q = {}
+    q = {};
     table = table.replace('_all', '');
-    q[table] = value
+    q[table] = value;
     window.location = query(q);
-  };
+  }
   function query(obj) {
     var str = [];
     for (var p in obj)

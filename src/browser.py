@@ -430,11 +430,15 @@ def main():
         return
 
     dbs = args["dbs"].split(",")
-    first_db = dbs.pop(0)
 
     if "format" in args and args["format"] == "json":
+        if not args.get("text"):
+            print("Content-Type: application/json")
+            print("")
+            print(json.dumps([]))
+            return
         # Search text in each database
-        json_list = json.loads(search.search(f"../build/{first_db}.db", args["text"]))
+        json_list = []
         for db in dbs:
             json_list.extend(json.loads(search.search(f"../build/{db}.db", args["text"])))
         # Sort alphabetically by length & name and take the first 20 results
@@ -455,44 +459,6 @@ def main():
 
     annotations = {}
     predicate_labels = {}
-
-    with sqlite3.connect(f"../build/{first_db}.db") as conn:
-        conn.row_factory = tree.dict_factory
-        cur = conn.cursor()
-        # Get prefixes
-        cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
-        all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
-        try:
-            if term == "owl:Class":
-                stanza = []
-            else:
-                cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
-                stanza = cur.fetchall()
-
-            if term != "owl:Class" and not stanza:
-                first_html = f"<div><h2>{first_db}</h2><p>Term not found</p></div>"
-            else:
-                data = get_data(first_db, cur, all_prefixes, term, stanza)
-                first_html = get_tree_html(
-                    first_db, cur, all_prefixes, data, href, term, stanza, search=True
-                )
-
-                if term and term not in top_levels:
-                    predicate_values, cur_predicate_labels = get_annotations(
-                        first_db, cur, all_prefixes, data, href, term, stanza
-                    )
-                    annotations[first_db] = predicate_values
-                    for predicate, label in cur_predicate_labels.items():
-                        if predicate in predicate_labels:
-                            if predicate_labels[predicate] == predicate and predicate != label:
-                                predicate_labels[predicate] = label
-                        else:
-                            predicate_labels[predicate] = label
-        except Exception as e:
-            print("Content-Type: text/html")
-            print("")
-            print("Error when generating HTML for " + first_db + ":<br>" + str(e))
-            return
 
     trees = []
     for db in dbs:
@@ -542,7 +508,7 @@ def main():
     else:
         ann_html = ""
 
-    html = t.render(first=first_html, trees=trees, title="test", annotations=ann_html)
+    html = t.render(trees=trees, title="test", annotations=ann_html)
 
     # Return with CGI headers
     print("Content-Type: text/html")
