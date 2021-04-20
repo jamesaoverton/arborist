@@ -439,12 +439,13 @@ def main():
             return
         # Search text in each database
         json_list = []
+        search_text = urllib.parse.unquote(args["text"])
         for db in dbs:
-            json_list.extend(json.loads(search.search(f"../build/{db}.db", args["text"])))
+            json_list.extend(json.loads(search.search(f"../build/{db}.db", search_text)))
         # Sort alphabetically by length & name and take the first 20 results
-        json_list = sorted(json_list, key=lambda i: i["display_name"])
-        json_list = sorted(json_list, key=lambda i: (-len(i["display_name"]), i["display_name"]))[
-            20:
+        json_list = sorted(json_list, key=lambda i: i["label"])
+        json_list = sorted(json_list, key=lambda i: (-len(i["label"]), i["label"]))[
+          :20
         ]
         print("Content-Type: application/json")
         print("")
