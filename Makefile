@@ -90,7 +90,7 @@ build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-trimmed.db 
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
 # ncbi-organized with collapsed nodes based on weights
-build/ncbi-pruned.db: src/prefixes.sql src/prune.py build/ncbi-organized.db build/precious.tsv build/counts.tsv build/organized-child-parents.tsv
+build/ncbi-pruned.db: src/prefixes.sql src/prune.py build/ncbi-organized.db build/precious.tsv build/counts.tsv build/ncbi-organized-child-parents.tsv
 	rm -rf build/ncbi-pruned.db
 	sqlite3 build/ncbi-pruned.db < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
@@ -102,7 +102,7 @@ build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-pruned.db bu
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
 # Any database with counts
-build/ncbi-%-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-%.db build/counts.tsv build/%-child-parents.tsv
+build/%-plus.db: src/prefixes.sql src/add-counts.py build/%.db build/counts.tsv build/%-child-parents.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
@@ -110,7 +110,7 @@ build/ncbi-%-plus.db: src/prefixes.sql src/add-counts.py build/ncbi-%.db build/c
 
 ### Parent Maps
 
-build/%-child-parents.tsv: src/get-child-parents.py build/ncbi-%.db
+build/%-child-parents.tsv: src/get-child-parents.py build/%.db
 	python3 $^ $@
 
 build/organism-tree.db: src/prefixes.sql build/organism-tree.owl | build/rdftab
@@ -133,4 +133,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-browser_deps: build/ncbitaxon.db build/ncbi-trimmed-plus.db build/ncbi-override-plus.db build/ncbi-pruned-plus.db build/ncbi-organized-plus.db build/organism-tree.db
+browser_deps: build/ncbi-trimmed-plus.db build/ncbi-override-plus.db build/ncbi-pruned-plus.db build/ncbi-organized-plus.db build/subspecies-tree-plus.db

@@ -59,6 +59,13 @@ def main():
                     tax_id = "NCBITaxon:" + tax_id
                 active_tax_ids.append(tax_id)
 
+        # Add the parents of IEDB taxa
+        with open(args.iedb_taxa, "r") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                parent_id = get_curie(row["Parent ID"])
+                active_tax_ids.append(parent_id)
+
         # print(f"Retrieving ancestors for {len(active_tax_ids)} active taxa...")
 
         for act_tax in active_tax_ids:

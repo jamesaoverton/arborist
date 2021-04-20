@@ -83,6 +83,11 @@ def move_species_up(cur, precious, nodes, limit=20):
         # Find all at species-level
         species = [x for x, y in ranks.items() if y == "NCBITaxon:species"]
 
+        # Add any precious terms
+        for child in child_parent.keys():
+            if child in precious:
+                species.append(child)
+
         if len(species) < limit:
             # Find list of all descendants, and if there is a precious node in descendants, use that
             descendants = []
@@ -91,9 +96,9 @@ def move_species_up(cur, precious, nodes, limit=20):
 
             replace = None
             if precious_descendants:
-                if len(precious_descendants) > 1:
-                    print("More than one precious under " + tax_id)
-                    print(precious_descendants)
+                # if len(precious_descendants) > 1:
+                    # print("More than one precious under " + tax_id)
+                    # print(precious_descendants)
 
                 # Move this term to replace the current tax_id
                 replace = list(precious_descendants)[0]
@@ -173,14 +178,16 @@ def prune(cur, precious, cuml_counts, child_parents):
             continue
         parent = child_parents[s2]
         # From there, move up the tree to find nodes to collapse
-        find_collapse_nodes(collapse_nodes, precious, cuml_counts, child_parents, [s2], parent)
+        this_collapse = {}
+        find_collapse_nodes(this_collapse, precious, cuml_counts, child_parents, [s2], parent)
+        collapse_nodes.update(this_collapse)
 
     clean = {}
     for remove in collapse_nodes.keys():
         replace = clean_collapse_nodes(collapse_nodes, remove)
         clean[remove] = replace
 
-    print(f"Collapsing {len(clean)} nodes...")
+    # print(f"Collapsing {len(clean)} nodes...")
     for remove, replace in clean.items():
         new_parent = get_parent(collapse_nodes.keys(), child_parents, replace)
         cur.execute("UPDATE statements SET object = ? WHERE object = ?", (replace, remove))
@@ -193,15 +200,23 @@ def prune(cur, precious, cuml_counts, child_parents):
         if remove in cuml_counts:
             del cuml_counts[remove]
 
-    print("Removing circular logic...")
+    # print("Removing circular logic...")
     cur.execute("DELETE FROM statements WHERE object = stanza")
+
+    print("two")
+    cur.execute("SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = 'NCBITaxon:5654'")
+    print(cur.fetchone())
 
     ranks = ["superorder", "order", "suborder", "superfamily", "family", "subfamily"]
     for r in ranks:
-        print(f"Moving species up for {r}...")
+        # print(f"Moving species up for {r}...")
         cur.execute(f"SELECT DISTINCT subject FROM statements WHERE object = 'NCBITaxon:{r}'")
         at_rank = [x[0] for x in cur.fetchall()]
         move_species_up(cur, precious, at_rank)
+
+    print("three")
+    cur.execute("SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = 'NCBITaxon:5654'")
+    print(cur.fetchone())
 
 
 def main():
