@@ -5,7 +5,14 @@ import sqlite3
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import copy_database, get_all_ancestors, get_curie, get_descendants, get_descendants_and_ranks, move_precious_to_other, move_rank_to_other
+from helpers import (
+    copy_database,
+    get_all_ancestors,
+    get_curie,
+    get_descendants,
+    get_descendants_and_ranks,
+    move_rank_to_other,
+)
 
 
 def get_top_ancestor(child_parent, node, limit):
@@ -33,7 +40,7 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
     # we want to keep that ancestor as the direct child instead
     replace_as_child = {}
     for taxa in at_rank:
-        ancestors = get_all_ancestors(child_parent, taxa, top_level)
+        ancestors = reversed(get_all_ancestors(child_parent, taxa, top_level))
         if not set(ancestors).isdisjoint(set(extras)):
             # Remove if they are a descendant of an "extra"
             keep_in_place.add(taxa)
@@ -76,8 +83,6 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
         # Otherwise, move the last of the ancestors to 'other organism'
         other_organisms.add(ancestors[-1])
 
-    if 'NCBITaxon:33090' in other_organisms:
-        print("Y")
     o_str = ", ".join([f"'{x}'" for x in other_organisms])
     cur.execute(
         f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
@@ -101,9 +106,7 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
 
     # Move all species-level terms to "Other" then delete ancestors
     if non_at_rank or precious_others:
-        move_rank_to_other(
-            cur, top_level_id, top_level_label, non_at_rank, precious=precious
-        )
+        move_rank_to_other(cur, top_level_id, top_level_label, non_at_rank, precious=precious)
 
 
 def organize(cur, top_level, precious):
@@ -135,7 +138,9 @@ def organize(cur, top_level, precious):
             other_rank = details.get("Other Rank", "")
             if other_rank.strip() == "":
                 other_rank = "species"
-            move_rank_to_other(cur, details["ID"], details["Label"], others, rank=other_rank, precious=precious)
+            move_rank_to_other(
+                cur, details["ID"], details["Label"], others, rank=other_rank, precious=precious
+            )
             continue
 
         # Otherwise, move all of given rank to top-level

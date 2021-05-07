@@ -89,7 +89,6 @@ build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-trimmed.db b
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
-# TODO - switch organized and override, except "oragnism" is causing issues
 # ncbi-trimmed organized with stable top levels
 build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-override.db build/top_level.tsv build/precious.tsv
 	rm -rf $@
