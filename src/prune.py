@@ -2,18 +2,64 @@
 
 import csv
 import sqlite3
-import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
 from helpers import (
     copy_database,
+    create_other,
     get_child_ancestors,
+    get_count_map,
     get_cumulative_counts,
     get_curie,
     get_descendants,
     get_descendants_and_ranks,
 )
+
+
+def clean(cur):
+    # Move any species-level terms to other when the term has non-species siblings
+    # Get the distinct parents of species
+    cur.execute(
+        """SELECT DISTINCT s2.object FROM statements s1
+        JOIN statements s2 ON s1.stanza = s2.stanza
+        WHERE s1.predicate = 'ncbitaxon:has_rank' AND s1.object = 'NCBITaxon:species'
+        AND s2.predicate = 'rdfs:subClassOf'"""
+    )
+    for res in cur.fetchall():
+        # For each parent, get their children and ranks
+        parent_id = res[0]
+        cur.execute(
+            """SELECT DISTINCT s2.stanza, s2.object FROM statements s1
+            JOIN statements s2 ON s1.stanza = s2.stanza
+            WHERE s1.predicate = 'rdfs:subClassOf' AND s1.object = ?
+            AND s2.predicate = 'ncbitaxon:has_rank'""",
+            (parent_id,),
+        )
+        child_ranks = {x[0]: x[1] for x in cur.fetchall()}
+        all_ranks = set(child_ranks.values())
+        if len(all_ranks) > 1 and "NCBITaxon:species" in all_ranks:
+            species = [x for x, y in child_ranks.items() if y == "NCBITaxon:species"]
+            non_species = [x for x in child_ranks.keys() if x not in species]
+            if len(species) > len(non_species):
+                # When there are more species, than non-species, don't bother putting them in other
+                continue
+
+            # Get parent label & create other node if needed
+            cur.execute(
+                "SELECT value FROM statements WHERE stanza = ? AND predicate = 'rdfs:label'",
+                (parent_id,),
+            )
+            parent_label = cur.fetchone()[0]
+            parent_tax = parent_id.split(":")[1]
+            create_other(cur, parent_tax, parent_label)
+
+            # Move these species to the other node
+            species_str = ", ".join([f"'{x}'" for x in species])
+            cur.execute(
+                f"""UPDATE statements SET object = 'iedb-taxon:{parent_tax}-other'
+                WHERE predicate = 'rdfs:subClassOf' AND stanza IN ({species_str})"""
+            )
 
 
 def get_parent(all_removed, child_parents, node):
@@ -97,8 +143,8 @@ def move_species_up(cur, precious, nodes, limit=20):
             replace = None
             if precious_descendants:
                 # if len(precious_descendants) > 1:
-                    # print("More than one precious under " + tax_id)
-                    # print(precious_descendants)
+                # print("More than one precious under " + tax_id)
+                # print(precious_descendants)
 
                 # Move this term to replace the current tax_id
                 replace = list(precious_descendants)[0]
@@ -170,25 +216,37 @@ def prune(cur, precious, cuml_counts, child_parents):
         start.append(row[0])
 
     collapse_nodes = {}
-    i = 0
     for s in start:
-        # Make sure we start with a non-precious node
-        s2 = find_start(precious, child_parents, s)
-        if s2 == "NCBITaxon:1":
+        s2 = child_parents[s]
+        if s2 in precious or s2 == "NCBITaxon:1":
+            # Make sure we start with a non-precious node
+            s2 = find_start(precious, child_parents, s)
+        if s2 == "NCBITaxon:1" or s2.endswith("other"):
             continue
-        parent = child_parents[s2]
+
+        # Move up from non-precious node until we hit a node we want to keep
+        # That node will be removed and replaced by its parent
+        if s2 == child_parents[s]:
+            start_collapse = s
+            parent = s2
+        else:
+            start_collapse = s2
+            parent = child_parents[s2]
+
         # From there, move up the tree to find nodes to collapse
         this_collapse = {}
-        find_collapse_nodes(this_collapse, precious, cuml_counts, child_parents, [s2], parent)
+        find_collapse_nodes(
+            this_collapse, precious, cuml_counts, child_parents, [start_collapse], parent
+        )
         collapse_nodes.update(this_collapse)
 
-    clean = {}
+    clean_nodes = {}
     for remove in collapse_nodes.keys():
         replace = clean_collapse_nodes(collapse_nodes, remove)
-        clean[remove] = replace
+        clean_nodes[remove] = replace
 
     # print(f"Collapsing {len(clean)} nodes...")
-    for remove, replace in clean.items():
+    for remove, replace in clean_nodes.items():
         new_parent = get_parent(collapse_nodes.keys(), child_parents, replace)
         cur.execute("UPDATE statements SET object = ? WHERE object = ?", (replace, remove))
         cur.execute("DELETE FROM statements WHERE stanza = ?", (remove,))
@@ -203,20 +261,12 @@ def prune(cur, precious, cuml_counts, child_parents):
     # print("Removing circular logic...")
     cur.execute("DELETE FROM statements WHERE object = stanza")
 
-    print("two")
-    cur.execute("SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = 'NCBITaxon:5654'")
-    print(cur.fetchone())
-
     ranks = ["superorder", "order", "suborder", "superfamily", "family", "subfamily"]
     for r in ranks:
         # print(f"Moving species up for {r}...")
         cur.execute(f"SELECT DISTINCT subject FROM statements WHERE object = 'NCBITaxon:{r}'")
         at_rank = [x[0] for x in cur.fetchall()]
         move_species_up(cur, precious, at_rank)
-
-    print("three")
-    cur.execute("SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = 'NCBITaxon:5654'")
-    print(cur.fetchone())
 
 
 def main():
@@ -249,20 +299,14 @@ def main():
             child_ancestors[child] = set()
         get_child_ancestors(child_ancestors, child_parents, child, child)
 
-    count_map = {}
-    with open(args.counts, "r") as f:
-        reader = csv.reader(f, delimiter="\t")
-        for row in reader:
-            if row[0] == "NULL":
-                continue
-            count_map[get_curie(row[0])] = int(row[1])
+    count_map = get_count_map(args.counts)
 
     copy_database(args.db, args.output)
     with sqlite3.connect(args.output) as conn:
         cur = conn.cursor()
-
-        cuml_counts = get_cumulative_counts(cur, count_map, child_ancestors)
+        cuml_counts = get_cumulative_counts(count_map, child_ancestors)
         prune(cur, precious, cuml_counts, child_parents)
+        clean(cur)
 
 
 if __name__ == "__main__":

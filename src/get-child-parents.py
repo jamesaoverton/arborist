@@ -1,7 +1,7 @@
-import csv
 import sqlite3
 
 from argparse import ArgumentParser
+from helpers import get_child_parents
 
 
 def get_curie(tax_id):
@@ -20,40 +20,10 @@ def main():
 
     with sqlite3.connect(args.db) as conn:
         cur = conn.cursor()
-        ids = []
-        cur.execute(
-            """SELECT DISTINCT stanza FROM statements
-            WHERE object = 'owl:Class'
-            AND stanza NOT IN (SELECT object FROM statements
-             WHERE predicate = 'rdfs:subClassOf')"""
-        )
-        for row in cur.fetchall():
-            ids.append(row[0])
-
-        child_parent = {}
-        print(f"Getting ancestors for {len(ids)} taxa...")
-        for tax_id in ids:
-            cur.execute(
-                """WITH RECURSIVE ancestors(parent, child) AS (
-                VALUES (?, NULL)
-                UNION
-                -- The non-blank parents of all of the parent terms extracted so far:
-                SELECT object AS parent, subject AS child
-                FROM statements, ancestors
-                WHERE ancestors.parent = statements.stanza
-                  AND statements.predicate = 'rdfs:subClassOf'
-                  AND statements.object NOT LIKE '_:%'
-                )
-                SELECT * FROM ancestors""",
-                (tax_id,),
-            )
-            for row in cur.fetchall():
-                if not row[1]:
-                    continue
-                child_parent[row[1]] = row[0]
+        child_parents = get_child_parents(cur)
 
         with open(args.output, "w") as f:
-            for child, parent in child_parent.items():
+            for child, parent in child_parents.items():
                 f.write(f"{child}\t{parent}\n")
 
 

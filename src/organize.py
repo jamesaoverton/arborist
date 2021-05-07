@@ -2,23 +2,10 @@
 
 import csv
 import sqlite3
-import sys
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import copy_database, get_curie, get_descendants, get_descendants_and_ranks
-
-
-def get_all_ancestors(child_parent, node, limit, ancestors=None):
-    if not ancestors:
-        ancestors = []
-    if node in child_parent:
-        parent = child_parent[node]
-        if parent == limit:
-            return ancestors
-        ancestors.append(parent)
-        return get_all_ancestors(child_parent, parent, limit, ancestors=ancestors)
-    return ancestors
+from helpers import copy_database, get_all_ancestors, get_curie, get_descendants, get_descendants_and_ranks, move_precious_to_other, move_rank_to_other
 
 
 def get_top_ancestor(child_parent, node, limit):
@@ -26,74 +13,6 @@ def get_top_ancestor(child_parent, node, limit):
     if parent == limit:
         return node
     return get_top_ancestor(child_parent, parent, limit)
-
-
-def move_to_other(
-    cur, parent_tax_id, parent_tax_label, others, rank="species", precious_others=None
-):
-    cur.execute(
-        f"""INSERT INTO statements (stanza, subject, predicate, object, value) VALUES
-        ('iedb-taxon:{parent_tax_id}-other',
-         'iedb-taxon:{parent_tax_id}-other',
-         'rdfs:subClassOf',
-         'NCBITaxon:{parent_tax_id}',
-         null),
-        ('iedb-taxon:{parent_tax_id}-other',
-         'iedb-taxon:{parent_tax_id}-other',
-         'rdfs:label',
-         null,
-         'Other {parent_tax_label}');"""
-    )
-
-    if rank == "none":
-        # Just set the others to be children of "Other" and return
-        others_str = ", ".join([f"'{x}'" for x in others])
-        cur.execute(
-            f"""UPDATE statements SET object = 'iedb-taxon:{parent_tax_id}-other'
-            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({others_str})"""
-        )
-        return
-
-    for o in others:
-        # Create map of parent -> child and ranks
-        child_parent = {}
-        ranks = {}
-        get_descendants_and_ranks(cur, child_parent, ranks, o)
-
-        # Find all at rank level
-        at_rank = [x for x, y in ranks.items() if y == "NCBITaxon:" + rank]
-
-        # These get bumped up to 'other' then all extra nodes get deleted
-        at_rank_str = ", ".join([f"'{x}'" for x in at_rank])
-        cur.execute(
-            f"""UPDATE statements SET object = 'iedb-taxon:{parent_tax_id}-other'
-            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({at_rank_str})"""
-        )
-
-        # Find nodes to move to 'other organism'
-        other_organisms = set()
-        for s in at_rank:
-            if s not in child_parent:
-                continue
-            ancestors = get_all_ancestors(child_parent, s, "NCBITaxon:" + parent_tax_id)
-            if not ancestors:
-                continue
-            other_organisms.add(ancestors[-1])
-        if not other_organisms:
-            other_organisms.add(o)
-        o_str = ", ".join([f"'{x}'" for x in other_organisms])
-        cur.execute(
-            f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
-            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({o_str})"""
-        )
-
-    # Finally, move the 'precious' others to the correct level
-    if precious_others:
-        po_str = ", ".join([f"'{x}'" for x in precious_others])
-        cur.execute(
-            f"""UPDATE statements SET object = 'iedb-taxon:{parent_tax_id}-other'
-            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({po_str})"""
-        )
 
 
 def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None):
@@ -110,12 +29,22 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
 
     # Sometimes rank-level nodes may be under an extra, make sure these aren't moved
     keep_in_place = set()
-    for f in at_rank:
-        ancestors = get_all_ancestors(child_parent, f, top_level)
+    # If a rank-level term has a precious ancestor,
+    # we want to keep that ancestor as the direct child instead
+    replace_as_child = {}
+    for taxa in at_rank:
+        ancestors = get_all_ancestors(child_parent, taxa, top_level)
         if not set(ancestors).isdisjoint(set(extras)):
             # Remove if they are a descendant of an "extra"
-            keep_in_place.add(f)
-    at_rank = list(set(at_rank) - keep_in_place)
+            keep_in_place.add(taxa)
+        precious_ancestors = list(set(ancestors).intersection(set(precious)))
+        if precious_ancestors:
+            replace_as_child[taxa] = precious_ancestors[0]
+    at_rank = set(at_rank) - keep_in_place
+    for taxa, replacement in replace_as_child.items():
+        if taxa in at_rank:
+            at_rank.remove(taxa)
+        at_rank.add(replacement)
 
     # Bump all nodes of given rank to top-level
     at_rank_str = ", ".join([f"'{x}'" for x in at_rank])
@@ -146,6 +75,9 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
                 precious_others.add(x)
         # Otherwise, move the last of the ancestors to 'other organism'
         other_organisms.add(ancestors[-1])
+
+    if 'NCBITaxon:33090' in other_organisms:
+        print("Y")
     o_str = ", ".join([f"'{x}'" for x in other_organisms])
     cur.execute(
         f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
@@ -160,16 +92,17 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
     )
     non_at_rank = []
     for row in cur.fetchall():
-        if row[0] in extras:
+        tax_id = row[0]
+        if tax_id in extras or tax_id in precious:
             continue
-        r = ranks.get(row[0], "")
+        r = ranks.get(tax_id, "")
         if r != "NCBITaxon:" + rank:
-            non_at_rank.append(row[0])
+            non_at_rank.append(tax_id)
 
     # Move all species-level terms to "Other" then delete ancestors
     if non_at_rank or precious_others:
-        move_to_other(
-            cur, top_level_id, top_level_label, non_at_rank, precious_others=precious_others
+        move_rank_to_other(
+            cur, top_level_id, top_level_label, non_at_rank, precious=precious
         )
 
 
@@ -202,7 +135,7 @@ def organize(cur, top_level, precious):
             other_rank = details.get("Other Rank", "")
             if other_rank.strip() == "":
                 other_rank = "species"
-            move_to_other(cur, details["ID"], details["Label"], others, rank=other_rank)
+            move_rank_to_other(cur, details["ID"], details["Label"], others, rank=other_rank, precious=precious)
             continue
 
         # Otherwise, move all of given rank to top-level
@@ -250,7 +183,7 @@ def main():
             top_level_unordered[tax_id] = row
 
     # Sort top level by structure (starting with children of cellular organism)
-    orgs = top_structure["NCBITaxon:131567"]
+    orgs = top_structure["OBI:0100026"]
     full_line = []
     for o in orgs:
         line = [o]

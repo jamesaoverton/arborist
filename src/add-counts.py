@@ -39,7 +39,7 @@ def main():
                 if row[0] == "NULL":
                     continue
                 count_map[get_curie(row[0])] = int(row[1])
-        cuml_counts = get_cumulative_counts(cur, count_map, child_ancestors)
+        cuml_counts = get_cumulative_counts(count_map, child_ancestors)
 
         for tax_id, count in cuml_counts.items():
             cur.execute(

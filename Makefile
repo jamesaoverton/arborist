@@ -69,13 +69,13 @@ build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
 
 # Active taxa + manually updated taxa (labels & parents)
-build/precious.tsv: build/ncbi_taxa.tsv build/taxon_parents.tsv build/iedb_taxa.tsv build/active-taxa.tsv
+build/precious.tsv: build/ncbi_taxa.tsv build/iedb_taxa.tsv build/active-taxa.tsv
 	tail -n +2 $< | cut -f1 > $@
 	tail -n +2 $(word 2,$^) | cut -f1 >> $@
-	tail -n +2 $(word 3,$^) | cut -f1 >> $@
-	cat $(word 4,$^) >> $@
+	cat $(word 3,$^) >> $@
 
 ### Trees
+
 
 # IEDB active nodes (including IEDB taxa) + their ancestors (no pruning)
 build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/active-taxa.tsv build/iedb_taxa.tsv
@@ -83,20 +83,27 @@ build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/act
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
+# ncbi-trimmed with manual changes
+build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-trimmed.db build/ncbi_taxa.tsv build/taxon_parents.tsv build/precious.tsv build/ncbi-trimmed-child-parents.tsv build/counts.tsv
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
+
+# TODO - switch organized and override, except "oragnism" is causing issues
 # ncbi-trimmed organized with stable top levels
-build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-trimmed.db build/top_level.tsv build/precious.tsv
+build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-override.db build/top_level.tsv build/precious.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
 # ncbi-organized with collapsed nodes based on weights
 build/ncbi-pruned.db: src/prefixes.sql src/prune.py build/ncbi-organized.db build/precious.tsv build/counts.tsv build/ncbi-organized-child-parents.tsv
-	rm -rf build/ncbi-pruned.db
-	sqlite3 build/ncbi-pruned.db < $<
+	rm -rf $@
+	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
-# ncbi-pruned with manual changes
-build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-pruned.db build/ncbi_taxa.tsv build/taxon_parents.tsv
+# ncbi-pruned with thresholds to move species to "other" (1% of epitopes)
+build/ncbi-rehomed.db: src/prefixes.sql src/rehome.py build/ncbi-pruned.db build/precious.tsv build/counts.tsv build/ncbi-pruned-child-parents.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
@@ -133,4 +140,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-browser_deps: build/ncbi-trimmed-plus.db build/ncbi-override-plus.db build/ncbi-pruned-plus.db build/ncbi-organized-plus.db build/subspecies-tree-plus.db
+browser_deps: build/ncbi-pruned-plus.db build/ncbi-rehomed-plus.db build/subspecies-tree-plus.db

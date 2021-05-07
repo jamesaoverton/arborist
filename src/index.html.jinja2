@@ -170,7 +170,7 @@
     }
     table = node.id.replace("-typeahead", "");
     var bloodhound = new Bloodhound({
-      datumTokenizer: Bloodhound.tokenizers.obj.nonword('display_name'),
+      datumTokenizer: Bloodhound.tokenizers.obj.nonword('label'),
       queryTokenizer: Bloodhound.tokenizers.nonword,
       sorter: function(a, b) {
         return a.order - b.order;

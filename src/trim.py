@@ -43,7 +43,7 @@ def main():
         for row in cur.fetchall():
             tax_id = row[0]
             try:
-                tax_int = int(tax_id.split(":")[1])
+                int(tax_id.split(":")[1])
             except ValueError:
                 # Not a tax ID
                 continue
@@ -69,6 +69,7 @@ def main():
         # print(f"Retrieving ancestors for {len(active_tax_ids)} active taxa...")
 
         for act_tax in active_tax_ids:
+            weights[act_tax] = 1
             cur.execute(
                 """WITH RECURSIVE active(node) AS (
                 VALUES (?)
@@ -89,6 +90,8 @@ def main():
             )
             for row in cur.fetchall():
                 parent_id = row[0]
+                if parent_id == act_tax:
+                    continue
                 weights[parent_id] = 1
 
         active_nodes = [x for x, y in weights.items() if y > 0]
@@ -97,9 +100,8 @@ def main():
         # use f-string because we don't know how many values we have
         active_nodes = ", ".join([f"'{x}'" for x in active_nodes])
         cur.execute(f"SELECT * FROM statements WHERE stanza IN ({active_nodes})")
-        rows = cur.fetchall()
         insert = []
-        for r in rows:
+        for r in cur.fetchall():
             vals = []
             for itm in r:
                 if not itm:
