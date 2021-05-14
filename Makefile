@@ -96,7 +96,7 @@ build/ncbi-organized.db: src/prefixes.sql src/organize.py build/ncbi-override.db
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
 # ncbi-organized with collapsed nodes based on weights
-build/ncbi-pruned.db: src/prefixes.sql src/prune.py build/ncbi-organized.db build/precious.tsv build/counts.tsv build/ncbi-organized-child-parents.tsv
+build/ncbi-pruned.db: src/prefixes.sql src/prune2.py build/ncbi-organized.db build/precious.tsv build/counts.tsv build/ncbi-organized-child-parents.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
@@ -139,4 +139,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-browser_deps: build/ncbi-pruned-plus.db build/ncbi-rehomed-plus.db build/subspecies-tree-plus.db
+browser_deps: build/ncbi-trimmed-plus.db build/ncbi-rehomed-plus.db build/subspecies-tree-plus.db

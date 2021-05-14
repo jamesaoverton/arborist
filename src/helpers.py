@@ -2,6 +2,81 @@ import csv
 import sqlite3
 
 
+def clean_no_epitopes(cur, counts, precious):
+    # Get bottom-level terms (are not object of subclass statement)
+    cur.execute(
+        """SELECT DISTINCT stanza FROM statements WHERE stanza NOT IN
+        (SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf')"""
+    )
+    remove = set()
+    for res in cur.fetchall():
+        term_id = res[0]
+        if term_id in precious or counts.get(term_id, 0) > 0:
+            continue
+        # TODO - Get the last ancestor that has no epitopes
+        remove.add(get_term_to_remove(cur, counts, precious, term_id))
+    for term_id in remove:
+        cur.execute(
+            """UPDATE statements SET object = 'iedb-taxon:0100026-other'
+            WHERE predicate = 'rdfs:subClassOf' AND stanza = ?""",
+            (term_id,),
+        )
+
+
+def clean_others(cur, precious):
+    cur.execute(
+        """SELECT DISTINCT stanza FROM statements
+        WHERE stanza LIKE '%-other' AND stanza IS NOT 'iedb-taxon:0100026-other'"""
+    )
+    for res in cur.fetchall():
+        # Get the direct children of this term
+        other_id = res[0]
+
+        # Get the precious descendants before moving anything around
+        precious_descendants = get_precious_descendants(cur, precious, other_id)
+
+        # Check if this is the ONLY child of the parent class
+        cur.execute(
+            f"""SELECT s2.stanza, s2.object FROM statements s1 
+            JOIN statements s2 ON s1.object = s2.object
+            WHERE s1.stanza = ? AND s1.predicate = 'rdfs:subClassOf'
+            AND s2.predicate = 'rdfs:subClassOf'""",
+            (other_id,),
+        )
+        res = cur.fetchall()
+        siblings = [x[0] for x in res]
+        parent = res[0][1]
+        if len(siblings) == 1:
+            # Get rid of the other node and bump up all terms
+            cur.execute(
+                """UPDATE statements SET object = 'iedb-taxon:0100026-other'
+                WHERE predicate = 'rdfs:subClassOf' AND stanza = ?""",
+                (other_id,),
+            )
+            move_to = parent
+        else:
+            # Otherwise move the direct children to Other Organism
+            move_to = other_id
+            cur.execute(
+                "SELECT stanza FROM statements WHERE object = ? AND predicate = 'rdfs:subClassOf'",
+                (other_id,),
+            )
+            children = [x[0] for x in cur.fetchall()]
+            child_str = ", ".join([f"'{x}'" for x in children])
+            cur.execute(
+                f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
+                        WHERE predicate = 'rdfs:subClassOf' AND stanza in ({child_str})"""
+            )
+
+        # Move the precious descendants back to this other term OR its parent
+        if precious_descendants:
+            desc_str = ", ".join([f"'{x}'" for x in precious_descendants])
+            cur.execute(
+                f"""UPDATE statements SET object = '{move_to}'
+                WHERE predicate = 'rdfs:subClassOf' AND stanza IN ({desc_str})"""
+            )
+
+
 def copy_database(input_db, output_db):
     with sqlite3.connect(input_db) as conn:
         # Get stanzas from source database
@@ -34,7 +109,7 @@ def copy_database(input_db, output_db):
                                                         datatype TEXT,
                                                         language TEXT)"""
             )
-            cur_new.execute("INSERT INTO statements VALUES " + insert)
+            cur_new.execute(f"INSERT INTO statements VALUES {insert}")
             cur_new.execute("CREATE INDEX stanza_idx ON statements (stanza)")
             cur_new.execute("CREATE INDEX subject_idx ON statements (subject)")
             cur_new.execute("CREATE INDEX object_idx ON statements (object)")
@@ -130,7 +205,7 @@ def get_cumulative_counts(count_map, child_ancestors):
     for child, ancestors in child_ancestors.items():
         count = count_map.get(child, 0)
         if child in cuml_counts:
-            cur_count = cuml_counts[child]
+            cur_count = cuml_counts.get(child, 0)
             cuml_counts[child] = cur_count + count
         else:
             cuml_counts[child] = count
@@ -192,9 +267,40 @@ def get_descendants_and_ranks(cur, child_parent, ranks, node):
         get_descendants_and_ranks(cur, child_parent, ranks, row[0])
 
 
-def move_rank_to_other(
-    cur, parent_tax_id, parent_tax_label, others, rank="species", precious=None
-):
+def get_precious_descendants(cur, precious, node):
+    descendants = []
+    get_descendants(cur, node, [], descendants)
+    precious_descendants = set(descendants).intersection(precious)
+
+    child_parent = {}
+    ranks = {}
+    get_descendants_and_ranks(cur, child_parent, ranks, node)
+
+    # Determine if a term in species has a parent in species (maybe strain subclass of species?)
+    # Do not double up, just move the parent
+    remove = set()
+    for p in precious_descendants:
+        ancestors = get_all_ancestors(child_parent, p, node)
+        if set(ancestors).intersection(precious_descendants):
+            remove.add(p)
+    return precious_descendants - remove
+
+
+def get_term_to_remove(cur, counts, precious, term_id):
+    cur.execute(
+        "SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = ?",
+        (term_id,),
+    )
+    res = cur.fetchone()
+    if res:
+        parent_id = res[0]
+        if parent_id in precious or counts.get(parent_id, 0) > 0:
+            return term_id
+        return get_term_to_remove(cur, counts, precious, parent_id)
+    return term_id
+
+
+def move_rank_to_other(cur, parent_tax_id, parent_tax_label, others, rank="species", precious=None):
     create_other(cur, parent_tax_id, parent_tax_label)
     if rank == "none":
         # Just set the others to be children of "Other" and return
@@ -249,7 +355,7 @@ def move_rank_to_other(
             # Find the non-at-ranks and move to other organism
             cur.execute(
                 "SELECT stanza FROM statements WHERE predicate = 'rdfs:subClassOf' AND object = ?",
-                (other_id,)
+                (other_id,),
             )
             other_organisms = [x[0] for x in cur.fetchall() if x[0] not in at_rank]
             o_str = ", ".join([f"'{x}'" for x in other_organisms])
@@ -294,22 +400,7 @@ def move_precious_to_other(cur, precious, parent_tax_id, parent_tax_label, other
         if o in precious:
             exclude_from_other_org.add(o)
             continue
-        descendants = []
-        get_descendants(cur, o, [], descendants)
-        precious_descendants = set(descendants).intersection(precious)
-
-        child_parent = {}
-        ranks = {}
-        get_descendants_and_ranks(cur, child_parent, ranks, o)
-
-        # Determine if a term in species has a parent in species (maybe strain subclass of species?)
-        # Do not double up, just move the parent
-        remove = set()
-        for p in precious_descendants:
-            ancestors = get_all_ancestors(child_parent, p, o)
-            if set(ancestors).intersection(precious_descendants):
-                remove.add(p)
-        precious_descendants = precious_descendants - remove
+        precious_descendants = get_precious_descendants(cur, precious, o)
 
         # Add all species to those excluded from being totally removed
         exclude_from_other_org.update(precious_descendants)
@@ -325,4 +416,5 @@ def move_precious_to_other(cur, precious, parent_tax_id, parent_tax_label, other
     others_str = ", ".join([f"'{x}'" for x in others])
     cur.execute(
         f"""UPDATE statements set object = 'iedb-taxon:0100026-other'
-        WHERE predicate = 'rdfs:subClassOf' AND stanza IN ({others_str})""")
+        WHERE predicate = 'rdfs:subClassOf' AND stanza IN ({others_str})"""
+    )

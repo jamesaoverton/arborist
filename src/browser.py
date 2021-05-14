@@ -104,7 +104,7 @@ def get_data(treename, cur, prefixes, term_id, stanza):
                          AND object = '{term_id}' AND subject NOT LIKE '_:%'
                          AND subject NOT IN ('owl:Thing', 'rdf:type'));"""
                 )
-            children = [row["subject"] for row in cur.fetchall()]
+            children = [row[0] for row in cur.fetchall()]
             hierarchy = {term_id: {"parents": [], "children": children}}
             curies = {term_id}
             for c in children:
@@ -140,7 +140,7 @@ def get_data(treename, cur, prefixes, term_id, stanza):
         AND value IS NOT NULL"""
     )
     for row in cur:
-        labels[row["subject"]] = row["value"]
+        labels[row[0]] = row[1]
     for t, o_label in top_levels.items():
         labels[t] = o_label
     if ontology_iri and ontology_title:
@@ -155,7 +155,7 @@ def get_data(treename, cur, prefixes, term_id, stanza):
               AND value='true'"""
     )
     for row in cur:
-        obsolete.append(row["subject"])
+        obsolete.append(row[0])
 
     # If the compact URIs in the labels map are also in the tree, then add the label info to the
     # corresponding node in the tree:
@@ -201,7 +201,7 @@ def get_rdfa(treename, cur, prefixes, data, href, stanza, term_id):
             f"""SELECT * FROM statements
             WHERE subject = '{ontology_iri}'"""
         )
-        stanza = cur.fetchall()
+        stanza = tree.create_stanza(cur.fetchall())
         subject = ontology_iri
         subject_label = data["labels"].get(ontology_iri, ontology_iri)
         si = tree.curie2iri(prefixes, subject)
@@ -386,7 +386,7 @@ def get_annotations(treename, cur, prefixes, data, href, term_id, stanza):
         f"SELECT DISTINCT subject, value FROM statements WHERE subject IN ({predicate_str}) AND predicate = 'rdfs:label'"
     )
     for row in cur.fetchall():
-        predicate_labels[row["subject"]] = row["value"]
+        predicate_labels[row[0]] = row[1]
 
     rem_predicates = set(set(predicates) - set(predicate_labels.keys()))
     for rp in rem_predicates:
@@ -449,7 +449,8 @@ def main():
         json_list = []
         search_text = urllib.parse.unquote(args["text"])
         for db in dbs:
-            json_list.extend(json.loads(search.search(f"../build/{db}.db", search_text)))
+            with sqlite3.connect(f"../build/{db}.db") as conn:
+                json_list.extend(json.loads(search.search(conn, search_text)))
         # Sort alphabetically by length & name and take the first 20 results
         json_list = sorted(json_list, key=lambda i: i["label"])
         json_list = sorted(json_list, key=lambda i: (-len(i["label"]), i["label"]))[
@@ -472,17 +473,16 @@ def main():
     trees = []
     for db in dbs:
         with sqlite3.connect(f"../build/{db}.db") as conn:
-            conn.row_factory = tree.dict_factory
             cur = conn.cursor()
             # Get prefixes
             cur.execute("SELECT * FROM prefix ORDER BY length(base) DESC")
-            all_prefixes = [(x["prefix"], x["base"]) for x in cur.fetchall()]
+            all_prefixes = [(x[0], x[1]) for x in cur.fetchall()]
             try:
                 if term == "owl:Class":
                     stanza = []
                 else:
                     cur.execute(f"SELECT * FROM statements WHERE stanza = '{term}'")
-                    stanza = cur.fetchall()
+                    stanza = tree.create_stanza(cur.fetchall())
 
                 if term != "owl:Class" and not stanza:
                     trees.append(f"<div><h2>{db}</h2><p>Term not found</p></div>")
@@ -503,6 +503,7 @@ def main():
                             predicate_labels[predicate] = label
 
             except Exception as e:
+                raise e
                 print("Content-Type: text/html")
                 print("")
                 print("Error when generating HTML for " + db + ":<br>" + str(e))

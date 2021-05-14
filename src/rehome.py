@@ -4,15 +4,14 @@ import sqlite3
 from argparse import ArgumentParser
 from collections import defaultdict
 from helpers import (
+    clean_no_epitopes,
+    clean_others,
     copy_database,
-    create_other,
-    get_all_ancestors,
     get_child_ancestors,
+    get_child_parents,
     get_count_map,
     get_cumulative_counts,
     get_curie,
-    get_descendants,
-    get_descendants_and_ranks,
     move_precious_to_other
 )
 
@@ -125,6 +124,19 @@ def main():
             "NCBITaxon:6157",
         ]:
             rehome(cur, precious, cuml_counts, taxa)
+
+        # Get the child-ancestors again
+        child_parents = get_child_parents(cur)
+        child_ancestors = defaultdict(set)
+        for child in child_parents.keys():
+            if child not in child_ancestors:
+                child_ancestors[child] = set()
+            get_child_ancestors(child_ancestors, child_parents, child, child)
+
+        cuml_counts = get_cumulative_counts(count_map, child_ancestors)
+        clean_no_epitopes(cur, cuml_counts, precious)
+        clean_others(cur, precious)
+
 
 
 if __name__ == "__main__":

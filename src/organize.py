@@ -11,6 +11,7 @@ from helpers import (
     get_curie,
     get_descendants,
     get_descendants_and_ranks,
+    move_precious_to_other,
     move_rank_to_other,
 )
 
@@ -81,13 +82,7 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
             for x in list(set(precious) & set(descendants)):
                 precious_others.add(x)
         # Otherwise, move the last of the ancestors to 'other organism'
-        other_organisms.add(ancestors[-1])
-
-    o_str = ", ".join([f"'{x}'" for x in other_organisms])
-    cur.execute(
-        f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
-        WHERE predicate = 'rdfs:subClassOf' AND subject IN ({o_str})"""
-    )
+        other_organisms.add(move)
 
     # Find non-rank level nodes under top-level
     cur.execute(
@@ -104,9 +99,18 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
         if r != "NCBITaxon:" + rank:
             non_at_rank.append(tax_id)
 
-    # Move all species-level terms to "Other" then delete ancestors
+    # Move all species-level or precious terms to "Other" then delete ancestors
     if non_at_rank or precious_others:
-        move_rank_to_other(cur, top_level_id, top_level_label, non_at_rank, precious=precious)
+        if "NCBITaxon:5052" in precious_others:
+            print("found")
+        move_precious_to_other(cur, precious, top_level_id, top_level_label, non_at_rank)
+        # move_rank_to_other(cur, top_level_id, top_level_label, non_at_rank, precious=precious)
+
+    o_str = ", ".join([f"'{x}'" for x in other_organisms])
+    cur.execute(
+        f"""UPDATE statements SET object = 'iedb-taxon:0100026-other'
+            WHERE predicate = 'rdfs:subClassOf' AND subject IN ({o_str})"""
+    )
 
 
 def organize(cur, top_level, precious):

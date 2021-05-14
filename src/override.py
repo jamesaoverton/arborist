@@ -5,39 +5,7 @@ import sqlite3
 
 from argparse import ArgumentParser
 from collections import defaultdict
-from helpers import get_child_ancestors, get_child_parents, get_count_map, get_cumulative_counts, get_curie
-
-
-def get_term_to_remove(cur, counts, precious, term_id):
-    cur.execute("SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = ?", (term_id,))
-    res = cur.fetchone()
-    if res:
-        parent_id = res[0]
-        if parent_id in precious or counts.get(parent_id, 0) > 0:
-            return term_id
-        return get_term_to_remove(cur, counts, precious, parent_id)
-    return term_id
-
-
-def clean(cur, counts, precious):
-    # Get bottom-level terms (are not object of subclass statement)
-    cur.execute(
-        """SELECT DISTINCT stanza FROM statements WHERE stanza NOT IN
-        (SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf')"""
-    )
-    remove = set()
-    for res in cur.fetchall():
-        term_id = res[0]
-        if term_id in precious or counts.get(term_id, 0) > 0:
-            continue
-        # TODO - Get the last ancestor that has no epitopes
-        remove.add(get_term_to_remove(cur, counts, precious, term_id))
-    for term_id in remove:
-        cur.execute(
-            """UPDATE statements SET object = 'iedb-taxon:0100026-other'
-            WHERE predicate = 'rdfs:subClassOf' AND stanza = ?""",
-            (term_id,)
-        )
+from helpers import clean_no_epitopes, get_child_ancestors, get_child_parents, get_count_map, get_cumulative_counts, get_curie
 
 
 def update_names(cur, names):
@@ -172,7 +140,7 @@ def update(source, target, precious, counts, names, parents):
                     precious_terms.append(get_curie(row[0]))
 
             # Clean up zero-epitope terms
-            clean(cur_new, cuml_counts, precious_terms)
+            clean_no_epitopes(cur_new, cuml_counts, precious_terms)
 
 
 def main():
