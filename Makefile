@@ -25,10 +25,13 @@ build/robot.jar: | build
 build/taxdmp.zip: | build
 	curl -L -o $@ https://ftp.ncbi.nih.gov/pub/taxonomy/taxdmp.zip
 
-build/ncbitaxon.db: src/ncbitaxon-to-db.py build/taxdmp.zip
+build/ncbitaxon.owl: | build
+	curl -Lk http://purl.obolibrary.org/obo/ncbitaxon.owl > $@
+
+build/ncbitaxon.db: src/prefixes.sql build/ncbitaxon.owl | build/rdftab
 	rm -f $@
 	sqlite3 $@ < src/prefixes.sql
-	python3 $^ $@ || (rm -f $@ && exit 1)
+	./build/rdftab $@ < $(word 2,$^)
 	sqlite3 $@ "CREATE INDEX idx_stanza ON statements (stanza);"
 	sqlite3 $@ "CREATE INDEX idx_subject ON statements (subject);"
 	sqlite3 $@ "CREATE INDEX idx_predicate ON statements (predicate);"
@@ -73,6 +76,7 @@ build/precious.tsv: build/ncbi_taxa.tsv build/iedb_taxa.tsv build/active-taxa.ts
 	tail -n +2 $< | cut -f1 > $@
 	tail -n +2 $(word 2,$^) | cut -f1 >> $@
 	cat $(word 3,$^) >> $@
+
 
 ### Trees
 
@@ -139,4 +143,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-browser_deps: build/ncbi-trimmed-plus.db build/ncbi-rehomed-plus.db build/subspecies-tree-plus.db
+browser_deps: build/ncbi-rehomed-plus.db build/subspecies-tree-plus.db
