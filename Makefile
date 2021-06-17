@@ -22,9 +22,6 @@ build/rdftab: | build
 build/robot.jar: | build
 	curl -Lk -o $@ https://build.obolibrary.io/job/ontodev/job/robot/job/master/lastSuccessfulBuild/artifact/bin/robot.jar
 
-build/taxdmp.zip: | build
-	curl -L -o $@ https://ftp.ncbi.nih.gov/pub/taxonomy/taxdmp.zip
-
 build/ncbitaxon.owl: | build
 	curl -Lk http://purl.obolibrary.org/obo/ncbitaxon.owl > $@
 
@@ -44,15 +41,19 @@ build/organism-tree.owl: | build
 
 # Manual IEDB Sheets
 
+# Label overrides
 build/ncbi_taxa.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=0"
 
+# IEDB taxa
 build/iedb_taxa.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=1409951076"
 
+# Parent overrides
 build/taxon_parents.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=1849479413"
 
+# Manual top-levels
 build/top_level.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=74523853"
 
@@ -87,8 +88,12 @@ build/ncbi-trimmed.db: src/prefixes.sql src/trim.py build/ncbitaxon.db build/act
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
 
+# Get all label overrides based on NCBI synonyms
+build/labels.tsv: src/get-labels.py build/ncbi-trimmed.db build/ncbi_taxa.tsv
+	python3 $^ > $@
+
 # ncbi-trimmed with manual changes
-build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-trimmed.db build/ncbi_taxa.tsv build/taxon_parents.tsv build/precious.tsv build/ncbi-trimmed-child-parents.tsv build/counts.tsv
+build/ncbi-override.db: src/prefixes.sql src/override.py build/ncbi-trimmed.db build/labels.tsv build/taxon_parents.tsv build/precious.tsv build/ncbi-trimmed-child-parents.tsv build/counts.tsv
 	rm -rf $@
 	sqlite3 $@ < $<
 	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)

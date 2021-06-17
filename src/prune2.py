@@ -64,7 +64,6 @@ def prune(cur, data, threshold=0.99):
             parent_node = child_parents.get(last_node)
             if not parent_node:
                 continue
-
             # Create the "other" class for the parent
             cur.execute(
                 "SELECT value FROM statements WHERE stanza = ? AND predicate = 'rdfs:label'",
@@ -86,7 +85,6 @@ def prune(cur, data, threshold=0.99):
                 "UPDATE statements SET object = ? WHERE stanza = ? AND predicate = 'rdfs:subClassOf'",
                 (f"iedb-taxon:{parent_tax}-other", last_node),
             )
-    pass
 
 
 def main():

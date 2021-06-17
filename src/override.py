@@ -11,56 +11,42 @@ from helpers import clean_no_epitopes, get_child_ancestors, get_child_parents, g
 def update_names(cur, names):
     # Replace cellular organisms with OBI organism
     cur.execute(
-        """
-        UPDATE statements
-        SET stanza = "OBI:0100026"
-        WHERE stanza = "NCBITaxon:131567";
-    """
+        "UPDATE statements SET stanza = 'OBI:0100026' WHERE stanza = 'NCBITaxon:131567';"
     )
     cur.execute(
-        """
-        UPDATE statements
-        SET subject = "OBI:0100026"
-        WHERE subject = "NCBITaxon:131567";
-    """
+        "UPDATE statements SET subject = 'OBI:0100026' WHERE subject = 'NCBITaxon:131567';"
     )
     cur.execute(
-        """
-        UPDATE statements
-        SET value = "Organism"
-        WHERE stanza = "OBI:0100026"
-          AND subject = "OBI:0100026"
-          AND predicate = "rdfs:label";
-    """
+        """UPDATE statements SET value = 'Organism'
+        WHERE stanza = 'OBI:0100026'
+          AND subject = 'OBI:0100026'
+          AND predicate = 'rdfs:label';"""
     )
     cur.execute(
-        """
-        UPDATE statements
-        SET object = "OBI:0100026"
-        WHERE object = "NCBITaxon:131567";
-    """
+        "UPDATE statements SET object = 'OBI:0100026' WHERE object = 'NCBITaxon:131567';"
     )
+    bnode_id = 1
     with open(names, "r") as f:
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
-            tax_id = get_curie(row["Taxon ID"])
+            tax_id = row["Taxon ID"]
             new_label = row["Label"]
+            label_source = row["Label Source"]
             cur.execute(
-                """
-                UPDATE statements
-                SET value = ?
-                WHERE stanza = ? AND subject = ? AND predicate = 'rdfs:label';
-            """,
+                """UPDATE statements SET value = ?
+                WHERE stanza = ? AND subject = ? AND predicate = 'rdfs:label'""",
                 (new_label, tax_id, tax_id),
             )
-            for syn in row["IEDB Synonyms"].split(","):
+            cur.execute(
+                """INSERT INTO statements (stanza, subject, predicate, value) VALUES
+                (?, ?, 'oio:hasLabelSource', ?)""", (tax_id, f"_:bnode{bnode_id:08}", label_source))
+            bnode_id += 1
+            for syn in row["Synonyms"].split(","):
                 if syn.strip() == "":
                     continue
                 cur.execute(
-                    """
-                    INSERT INTO statements (stanza, subject, predicate, value) VALUES
-                    (?, ?, "oboInOwl:hasExactSynonym", ?);
-                """,
+                    """INSERT INTO statements (stanza, subject, predicate, value) VALUES
+                    (?, ?, "oio:hasExactSynonym", ?)""",
                     (tax_id, tax_id, syn),
                 )
 
