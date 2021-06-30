@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import csv
+import logging
 import sqlite3
 
 from argparse import ArgumentParser
@@ -12,17 +13,23 @@ def add_iedb_taxa(cur, iedb_taxa):
         reader = csv.DictReader(f, delimiter="\t")
         for row in reader:
             tax_id = get_curie(row["Taxon ID"])
-            parent_id = get_curie(row["Parent ID"])
             label = row["Label"]
             cur.execute(
                 """
                 INSERT INTO statements (stanza, subject, predicate, object, value) VALUES
                 (?, ?, "rdf:type", "owl:Class", null),
-                (?, ?, "rdfs:subClassOf", ?, null),
                 (?, ?, "rdfs:label", null, ?);
             """,
-                (tax_id, tax_id, tax_id, tax_id, parent_id, tax_id, tax_id, label),
+                (tax_id, tax_id, tax_id, tax_id, label),
             )
+            for pid in row["Parent IDs"].split("|"):
+                cur.execute(
+                    """
+                    INSERT INTO statements (stanza, subject, predicate, object) VALUES
+                    (?, ?, "rdfs:subClassOf", ?);
+                """,
+                    (tax_id, tax_id, get_curie(pid)),
+                )
 
 
 def main():
@@ -49,22 +56,18 @@ def main():
                 continue
             weights[tax_id] = 0
 
-        active_tax_ids = []
+        active_tax_ids = set()
         with open(args.active_taxa, "r") as f:
             for line in f:
-                tax_id = line.strip()
-                if len(tax_id) == 8 and tax_id.startswith("100"):
-                    tax_id = "iedb-taxon:" + tax_id
-                elif not tax_id.startswith("OBI:"):
-                    tax_id = "NCBITaxon:" + tax_id
-                active_tax_ids.append(tax_id)
+                tax_id = get_curie(line.strip())
+                active_tax_ids.add(tax_id)
 
         # Add the parents of IEDB taxa
         with open(args.iedb_taxa, "r") as f:
             reader = csv.DictReader(f, delimiter="\t")
             for row in reader:
-                parent_id = get_curie(row["Parent ID"])
-                active_tax_ids.append(parent_id)
+                for pid in row["Parent IDs"].split("|"):
+                    active_tax_ids.add(get_curie(pid))
 
         # print(f"Retrieving ancestors for {len(active_tax_ids)} active taxa...")
 
@@ -117,17 +120,27 @@ def main():
             cur_new = conn_new.cursor()
             cur_new.execute(
                 """CREATE TABLE statements (stanza TEXT,
-                                                        subject TEXT,
-                                                        predicate TEXT,
-                                                        object TEXT,
-                                                        value TEXT,
-                                                        datatype TEXT,
-                                                        language TEXT)"""
+                                            subject TEXT,
+                                            predicate TEXT,
+                                            object TEXT,
+                                            value TEXT,
+                                            datatype TEXT,
+                                            language TEXT)"""
             )
             cur_new.execute("INSERT INTO statements VALUES " + insert)
 
             # Add the IEDB taxa
             add_iedb_taxa(cur_new, args.iedb_taxa)
+
+            # Check for active taxa not in database
+            cur_new.execute("SELECT DISTINCT stanza FROM statements WHERE object = 'owl:Class'")
+            existing_ids = set([x[0] for x in cur_new.fetchall()])
+            missing = set(active_tax_ids) - existing_ids
+            if missing:
+                logging.error(
+                    f"{len(missing)} active taxa missing from NCBITaxonomy:\n- "
+                    + "\n- ".join(missing)
+                )
 
 
 if __name__ == "__main__":

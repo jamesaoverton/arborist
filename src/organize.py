@@ -24,6 +24,13 @@ def get_top_ancestor(child_parent, node, limit):
 
 
 def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None):
+    # Init empty lists if these are not included
+    if not precious:
+        precious = []
+    if not extras:
+        extras = []
+
+    # Get all descendants and their ranks under this top level
     child_parent = {}
     ranks = {}
     top_level = get_curie(top_level_id)
@@ -35,19 +42,20 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
         extras = []
     at_rank.extend(extras)
 
-    # Sometimes rank-level nodes may be under an extra, make sure these aren't moved
+    # Sometimes rank-level nodes may be under an extra/precious, make sure these aren't moved
     keep_in_place = set()
     # If a rank-level term has a precious ancestor,
     # we want to keep that ancestor as the direct child instead
     replace_as_child = {}
     for taxa in at_rank:
         ancestors = reversed(get_all_ancestors(child_parent, taxa, top_level))
-        if not set(ancestors).isdisjoint(set(extras)):
-            # Remove if they are a descendant of an "extra"
+        if not set(ancestors).isdisjoint(set(extras)) or set(ancestors).isdisjoint(set(precious)):
+            # Remove if they are a descendant of an extra or precious node
             keep_in_place.add(taxa)
-        precious_ancestors = list(set(ancestors).intersection(set(precious)))
-        if precious_ancestors:
-            replace_as_child[taxa] = precious_ancestors[0]
+            # Find which to move directly under top level
+            precious_ancestors = list(set(ancestors).intersection(set(precious)))
+            if precious_ancestors:
+                replace_as_child[taxa] = precious_ancestors[0]
     at_rank = set(at_rank) - keep_in_place
     for taxa, replacement in replace_as_child.items():
         if taxa in at_rank:
@@ -70,8 +78,9 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
         ancestors = get_all_ancestors(child_parent, f, top_level)
         if not ancestors:
             continue
-        if not set(ancestors).isdisjoint(set(extras)):
-            # Extras may not be of given rank
+        if not set(ancestors).isdisjoint(set(extras)) or not set(ancestors).isdisjoint(
+                set(precious)):
+            # Extras & precious may not be of given rank
             # Make sure we don't accidentally remove them
             continue
         move = ancestors[-1]
@@ -101,8 +110,6 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
 
     # Move all species-level or precious terms to "Other" then delete ancestors
     if non_at_rank or precious_others:
-        if "NCBITaxon:5052" in precious_others:
-            print("found")
         move_precious_to_other(cur, precious, top_level_id, top_level_label, non_at_rank)
         # move_rank_to_other(cur, top_level_id, top_level_label, non_at_rank, precious=precious)
 

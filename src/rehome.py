@@ -52,25 +52,43 @@ def rehome(cur, precious, count_map, parent_id, threshold=0.01):
     )
     others = []
 
+    # First pass over results to check for special case:
+    # where "other" node is the only node above threshold
+    # In this case, if we rehome, "other" will be the only child of this node
+    under_threshold = []
+    all_children = []
     for res in cur.fetchall():
         term_id = res[0]
-        if term_id.endswith("other"):
-            continue
+        all_children.append(term_id)
         count = count_map.get(term_id, 0)
-        # TODO - what about if it only has one epitope?
         try:
             count / parent_count
-        except ZeroDivisionError as e:
+        except ZeroDivisionError:
             print(term_id)
-            print(parent_id)
-            raise e
+            continue
         if count / parent_count < threshold and not term_id.startswith("iedb-taxon"):
-            # Move all species to other
+            under_threshold.append(term_id)
+
+    # Remaining is everything that will not be moved to other
+    remaining = list(set(all_children) - set(under_threshold))
+    if len(remaining) == 1 and remaining[0].endswith("-other"):
+        print("Special - " + parent_id)
+        # Jump to rehoming the next level down
+        for term_id in under_threshold:
+            rehome(cur, precious, count_map, term_id, threshold=threshold)
+    else:
+        for term_id in under_threshold:
+            # Move terms under threshold to other
+            if term_id.endswith("other"):
+                continue
             others.append(term_id)
-        else:
-            # Go to next level
+        for term_id in remaining:
+            # Go to next level for each not under threshold
+            if term_id.endswith("other"):
+                continue
             rehome(cur, precious, count_map, term_id, threshold=threshold)
     if others:
+        # Find precious nodes in descendants of new other terms & move these to the other node
         move_precious_to_other(cur, precious, parent_id.split(":")[1], parent_label, others)
 
 
@@ -111,19 +129,44 @@ def main():
         cur = conn.cursor()
         cuml_counts = get_cumulative_counts(count_map, child_ancestors)
         # Make sure we aren't rehoming for anything we gave manual structure to
+        # TODO: this should get the manual structure nodes from top-level sheet
+        # - start at top level and then go down until we find non-manual node
+        # - that is where we want to start rehoming
+        # - skip rehoming for terms that have other children that are precious and go to next level
         for taxa in [
-            "NCBITaxon:2",
-            "NCBITaxon:10239",
-            "NCBITaxon:4751",
-            "NCBITaxon:58024",
-            "NCBITaxon:6854",
-            "NCBITaxon:6657",
-            "NCBITaxon:50557",
-            "NCBITaxon:6447",
-            "NCBITaxon:6231",
-            "NCBITaxon:6157",
+            "NCBITaxon:2",      # bacterium
+            "NCBITaxon:10239",  # virus
+            "NCBITaxon:4751",   # fungus
+            "NCBITaxon:58024",  # spermatophyte
+            "NCBITaxon:6854",   # arachnid
+            "NCBITaxon:6657",   # crustacean
+            "NCBITaxon:50557",  # insect
+            "NCBITaxon:6447",   # mollusc
+            "NCBITaxon:6231",   # nematode
+            "NCBITaxon:6157",   # platyhelminth
         ]:
-            rehome(cur, precious, cuml_counts, taxa)
+            # Check for direct 'other' children that are precious
+            # This is a weird scenario because we may end up moving
+            children = []
+            rehome_children = False
+            cur.execute(
+                "SELECT stanza FROM statements WHERE predicate = 'rdfs:subClassOf' AND object = ?",
+                (taxa,)
+            )
+            for res in cur.fetchall():
+                child_id = res[0]
+                if child_id.endswith("-other"):
+                    if child_id in precious:
+                        rehome_children = True
+                else:
+                    # Only rehome under non-other nodes
+                    children.append(child_id)
+
+            if rehome_children:
+                for c in children:
+                    rehome(cur, precious, cuml_counts, c)
+            else:
+                rehome(cur, precious, cuml_counts, taxa)
 
         # Get the child-ancestors again
         child_parents = get_child_parents(cur)
@@ -136,7 +179,6 @@ def main():
         cuml_counts = get_cumulative_counts(count_map, child_ancestors)
         clean_no_epitopes(cur, cuml_counts, precious)
         clean_others(cur, precious)
-
 
 
 if __name__ == "__main__":

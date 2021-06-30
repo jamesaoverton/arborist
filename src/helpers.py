@@ -29,8 +29,10 @@ def clean_others(cur, precious):
         WHERE stanza LIKE '%-other' AND stanza IS NOT 'iedb-taxon:0100026-other'"""
     )
     for res in cur.fetchall():
-        # Get the direct children of this term
         other_id = res[0]
+        if other_id in precious:
+            # This 'other' node has epitopes, do nothing
+            continue
 
         # Get the precious descendants before moving anything around
         precious_descendants = get_precious_descendants(cur, precious, other_id)
@@ -315,7 +317,7 @@ def move_rank_to_other(cur, parent_tax_id, parent_tax_label, others, rank="speci
     for o in others:
         other_id = f"iedb-taxon:{parent_tax_id}-other"
         if o in precious:
-            print(o + " is precious")
+            # print(o + " is precious")
             # Move this node to other
             # then get it's at-rank (or precious) children and move those directly under it
             cur.execute(

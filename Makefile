@@ -66,8 +66,8 @@ refresh_sheets:
 	make iedb_sheets
 
 # Tax ID -> epitope count
-build/counts.tsv: | build
-	# TODO - query from IEDB
+build/counts.tsv: src/get-counts.sql | build
+	$(MIRROR_QUERY) < $< | tail -n +2 > $@
 
 build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
