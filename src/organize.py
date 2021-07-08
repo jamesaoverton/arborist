@@ -49,13 +49,14 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
     replace_as_child = {}
     for taxa in at_rank:
         ancestors = reversed(get_all_ancestors(child_parent, taxa, top_level))
-        if not set(ancestors).isdisjoint(set(extras)) or set(ancestors).isdisjoint(set(precious)):
+        if not set(ancestors).isdisjoint(set(extras)) or not set(ancestors).isdisjoint(set(precious)):
             # Remove if they are a descendant of an extra or precious node
             keep_in_place.add(taxa)
             # Find which to move directly under top level
             precious_ancestors = list(set(ancestors).intersection(set(precious)))
             if precious_ancestors:
                 replace_as_child[taxa] = precious_ancestors[0]
+
     at_rank = set(at_rank) - keep_in_place
     for taxa, replacement in replace_as_child.items():
         if taxa in at_rank:

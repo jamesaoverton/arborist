@@ -72,7 +72,7 @@ def rehome(cur, precious, count_map, parent_id, threshold=0.01):
     # Remaining is everything that will not be moved to other
     remaining = list(set(all_children) - set(under_threshold))
     if len(remaining) == 1 and remaining[0].endswith("-other"):
-        print("Special - " + parent_id)
+        # print("Special - " + parent_id)
         # Jump to rehoming the next level down
         for term_id in under_threshold:
             rehome(cur, precious, count_map, term_id, threshold=threshold)
