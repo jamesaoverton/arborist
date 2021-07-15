@@ -50,7 +50,7 @@ browsers = {
     "new-subspecies-tree-plus": {
         "name": "New Tree",
         "description": "The new version of the subspecies tree"
-    }
+    },
     "subspecies-tree-plus": {
         "name": "Subspecies Tree",
         "description": "The latest version of the subspecies tree provided for IEDB"
