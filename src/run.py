@@ -477,8 +477,6 @@ def move_up(cur, top_level_id, top_level_label, rank, precious=None, extras=None
 def organize(conn, top_level, precious):
     cur = conn.cursor()
     for curie, details in top_level.items():
-        if curie == "NCBITaxon:32644":
-            print("FOO")
         parent = get_curie(details["Parent ID"])
 
         # First, rehome this node
@@ -846,7 +844,11 @@ def main():
     reader = csv.reader(args.counts, delimiter="\t")
     next(reader)
     for row in reader:
-        counts[get_curie(row[0])] = int(row[1])
+        curie = get_curie(row[0])
+        if curie == "NCBITaxon:694009":
+            # Manually remove old COVID term from counts, we don't want this in the tree
+            continue
+        counts[curie] = int(row[1])
 
     # Read in custom IEDB taxa
     iedb_taxa = {}
