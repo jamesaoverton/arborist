@@ -2,7 +2,7 @@ import csv
 import sqlite3
 
 
-def clean_no_epitopes(cur, counts, precious):
+def clean_no_epitopes(cur, counts):
     # Get bottom-level terms (are not object of subclass statement)
     cur.execute(
         """SELECT DISTINCT stanza FROM statements WHERE stanza NOT IN
@@ -11,10 +11,10 @@ def clean_no_epitopes(cur, counts, precious):
     remove = set()
     for res in cur.fetchall():
         term_id = res[0]
-        if term_id in precious or counts.get(term_id, 0) > 0:
+        if counts.get(term_id, 0) > 0:
             continue
         # TODO - Get the last ancestor that has no epitopes
-        remove.add(get_term_to_remove(cur, counts, precious, term_id))
+        remove.add(get_term_to_remove(cur, counts, term_id))
     for term_id in remove:
         cur.execute(
             """UPDATE statements SET object = 'iedb-taxon:0100026-other'
@@ -167,7 +167,7 @@ def get_child_parents(cur):
         ids.append(row[0])
 
     child_parent = {}
-    print(f"Getting ancestors for {len(ids)} taxa...")
+    # print(f"Getting ancestors for {len(ids)} taxa...")
     for tax_id in ids:
         cur.execute(
             """WITH RECURSIVE ancestors(parent, child) AS (
@@ -288,7 +288,7 @@ def get_precious_descendants(cur, precious, node):
     return precious_descendants - remove
 
 
-def get_term_to_remove(cur, counts, precious, term_id):
+def get_term_to_remove(cur, counts, term_id):
     cur.execute(
         "SELECT object FROM statements WHERE predicate = 'rdfs:subClassOf' AND stanza = ?",
         (term_id,),
@@ -296,9 +296,9 @@ def get_term_to_remove(cur, counts, precious, term_id):
     res = cur.fetchone()
     if res:
         parent_id = res[0]
-        if parent_id in precious or counts.get(parent_id, 0) > 0:
+        if counts.get(parent_id, 0) > 0:
             return term_id
-        return get_term_to_remove(cur, counts, precious, parent_id)
+        return get_term_to_remove(cur, counts, parent_id)
     return term_id
 
 

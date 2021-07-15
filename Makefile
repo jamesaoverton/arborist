@@ -45,10 +45,6 @@ build/organism-tree.owl: | build
 build/ncbi_taxa.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=0"
 
-# IEDB taxa
-build/iedb_taxa.tsv: | build
-	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=1409951076"
-
 # Parent overrides
 build/taxon_parents.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=1849479413"
@@ -57,7 +53,7 @@ build/taxon_parents.tsv: | build
 build/top_level.tsv: | build
 	curl -Lk -o $@ "https://docs.google.com/spreadsheets/d/1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4/export?format=tsv&id=1vza08DSUVEDn1i470RUHNulb_HQYzyczCzcojrH1WU4&gid=74523853"
 
-IEDB_SHEETS := build/ncbi_taxa.tsv build/iedb_taxa.tsv build/taxon_parents.tsv build/top_level.tsv
+IEDB_SHEETS := build/ncbi_taxa.tsv build/taxon_parents.tsv build/top_level.tsv
 iedb_sheets: $(IEDB_SHEETS)
 
 .PHONY: refresh_sheets
@@ -67,11 +63,17 @@ refresh_sheets:
 
 # Tax ID -> epitope count
 build/counts.tsv: src/get-counts.sql | build
-	$(MIRROR_QUERY) < $< | tail -n +2 > $@
+	$(MIRROR_QUERY) < $< > $@
 
+# Custom IEDB taxa
+build/iedb_taxa.tsv: src/get-iedb-taxa.sql | build
+	$(MIRROR_QUERY) < $< > $@
+
+# not needed for new tree
 build/active-taxa.tsv: build/counts.tsv
 	cut -f1 $< > $@
 
+# not needed for new tree
 # Active taxa + manually updated taxa (labels & parents)
 build/precious.tsv: build/ncbi_taxa.tsv build/iedb_taxa.tsv build/active-taxa.tsv
 	tail -n +2 $< | cut -f1 > $@
@@ -80,6 +82,15 @@ build/precious.tsv: build/ncbi_taxa.tsv build/iedb_taxa.tsv build/active-taxa.ts
 
 
 ### Trees
+
+
+build/new-subspecies-tree.db: src/prefixes.sql src/run.py build/ncbitaxon.db build/counts.tsv build/iedb_taxa.tsv build/ncbi_taxa.tsv build/taxon_parents.tsv build/top_level.tsv
+	rm -rf $@
+	sqlite3 $@ < $<
+	python3 $(filter-out src/prefixes.sql,$^) $@ || (rm -rf $@ && exit 1)
+
+
+### Old Tasks
 
 
 # IEDB active nodes (including IEDB taxa) + their ancestors (no pruning)
@@ -148,4 +159,4 @@ build/subspecies-tree.db: src/prefixes.sql build/subspecies-tree.owl | build/rdf
 install: requirements.txt
 	python3 -m pip install -r $<
 
-browser_deps: build/ncbi-rehomed-plus.db build/subspecies-tree-plus.db
+browser_deps: build/new-subspecies-tree-plus.db build/subspecies-tree-plus.db

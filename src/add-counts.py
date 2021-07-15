@@ -35,6 +35,7 @@ def main():
         count_map = {}
         with open(args.counts, "r") as f:
             reader = csv.reader(f, delimiter="\t")
+            next(reader)
             for row in reader:
                 if row[0] == "NULL":
                     continue
