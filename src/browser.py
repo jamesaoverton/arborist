@@ -47,6 +47,10 @@ browsers = {
         "name": "Organism Tree",
         "description": "The latest version of the organism tree used for IEDB"
     },
+    "new-subspecies-tree-plus": {
+        "name": "New Tree",
+        "description": "The new version of the subspecies tree"
+    }
     "subspecies-tree-plus": {
         "name": "Subspecies Tree",
         "description": "The latest version of the subspecies tree provided for IEDB"
