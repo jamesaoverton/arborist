@@ -94,7 +94,10 @@ def fix_ranks(cur):
     insert = []
     for res in cur.fetchall():
         term_id = res[0]
-        rank = res[1].lstrip("NCBITaxon:")
+        rank = res[1]
+        if not rank.startswith("NCBITaxon:"):
+            continue
+        rank = rank.replace("NCBITaxon:", "")
         insert.append(", ".join([f"'{term_id}'", f"'{term_id}'", "'ONTIE:0003617'", f"'{rank}'"]))
     insert = ", ".join([f"({x})" for x in insert])
     cur.execute(f"INSERT INTO statements (stanza, subject, predicate, value) VALUES {insert}")
